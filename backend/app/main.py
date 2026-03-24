@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import secrets
 import shutil
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -351,7 +351,7 @@ async def extract_all(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="folder_path is not a valid directory")
 
     # Create a run directory; temporary runs are marked for later cleanup.
-    run_id = next(tempfile._get_candidate_names())
+    run_id = secrets.token_hex(8)
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     _set_run_keep_record(run_dir, keep_record)

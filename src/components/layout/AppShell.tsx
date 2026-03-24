@@ -3,17 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '../../lib/apiClient';
 import {
-  DEFAULT_FIGURE_SETTINGS,
-  buildSuccessfulSeriesPayload,
   formatRangeInput,
   getSnappedRange,
   isFitError,
   normalizeSeriesPair,
-  parseOffsetInput,
-  parseRangeInput,
   sampleColors,
   summarizeFitResults,
+  buildSuccessfulSeriesPayload,
 } from '../../lib/workflowUtils';
+import { useFigureSettings } from '../../hooks/useFigureSettings';
+import { useRunRecord } from '../../hooks/useRunRecord';
 import type {
   ExtractAllResponse,
   GetDatasetResponse,
@@ -21,8 +20,6 @@ import type {
 } from '../../types/api';
 import type {
   DatasetCache,
-  FigurePanelSettings,
-  FigureSettingsState,
   FitRangeMap,
   FitResultMap,
   IntegrationCache,
@@ -46,7 +43,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function AppShell() {
-  const runRecordSaveQueue = useRef(Promise.resolve());
+  const { queueSave } = useRunRecord();
   const integrationDebounceRef = useRef<number | null>(null);
   const unloadActionRef = useRef<string>('');
 
@@ -86,11 +83,14 @@ export function AppShell() {
   const [fitSummaryMsg, setFitSummaryMsg] = useState(
     'Set fit ranges in Step 3, then run fitting for all selected files.',
   );
-  const [figureSettings, setFigureSettings] = useState<FigureSettingsState>(
-    DEFAULT_FIGURE_SETTINGS,
-  );
   const [runFitsPending, setRunFitsPending] = useState(false);
   const [vizStatusMsg, setVizStatusMsg] = useState('Extract files to begin.');
+
+  // Derive getFileColor early so useFigureSettings can close over it.
+  // (extractedFilenames/figureSettings are needed; figureSettings comes from useFigureSettings below)
+  // To break the circular dependency we capture a stable ref updated by the hook.
+  const getFileColorRef = useRef<(filename: string) => string>(() => '#1f77b4');
+  const getFileColor = (filename: string) => getFileColorRef.current(filename);
 
   const successfulFits = useMemo(
     () => extractedFilenames.filter((filename) => fitResults[filename] && !isFitError(fitResults[filename])),
@@ -126,7 +126,24 @@ export function AppShell() {
   const currentIntegrationData =
     (activeKineticsFile && integrationCache[activeKineticsFile]) || null;
 
-  const getFileColor = (filename: string) => {
+
+  const {
+    figureSettings,
+    buildFigureRenderSettings,
+    handleFigurePanelChange,
+    handleFigureColorSchemeChange,
+  } = useFigureSettings({
+    runId,
+    extractedFilenames,
+    fitResults,
+    getFileColor,
+    onFitSummaryMsg: setFitSummaryMsg,
+    onFitFigureUrls: setFitFigureUrls,
+  });
+
+  // Keep the ref implementation fresh every render so that useFigureSettings
+  // and runAllFits always use the current colorScheme and extractedFilenames.
+  getFileColorRef.current = (filename: string) => {
     const idx = Math.max(0, extractedFilenames.indexOf(filename));
     const palette = sampleColors(
       figureSettings.colorScheme || 'None',
@@ -134,38 +151,6 @@ export function AppShell() {
     );
     return palette[idx % palette.length];
   };
-
-  const buildFigureRenderSettings = (settings = figureSettings) => ({
-    color_scheme: settings.colorScheme,
-    overlay: {
-      xlabel: settings.overlay.xlabel.trim() || 'Time / Potential',
-      ylabel: settings.overlay.ylabel.trim() || 'Peak Area',
-      xlim: (() => {
-        const range = parseRangeInput(settings.overlay.xRangeInput);
-        return range ? [range.start, range.end] : null;
-      })(),
-      ylim: (() => {
-        const range = parseRangeInput(settings.overlay.yRangeInput);
-        return range ? [range.start, range.end] : null;
-      })(),
-      show_labels: settings.overlay.showLabels,
-      label_offset: parseOffsetInput(settings.overlay.labelOffsetInput),
-    },
-    normalized: {
-      xlabel: settings.normalized.xlabel.trim() || 'Time / Potential',
-      ylabel: settings.normalized.ylabel.trim() || 'Normalized Peak Area',
-      xlim: (() => {
-        const range = parseRangeInput(settings.normalized.xRangeInput);
-        return range ? [range.start, range.end] : null;
-      })(),
-      ylim: (() => {
-        const range = parseRangeInput(settings.normalized.yRangeInput);
-        return range ? [range.start, range.end] : null;
-      })(),
-      show_labels: settings.normalized.showLabels,
-      label_offset: parseOffsetInput(settings.normalized.labelOffsetInput),
-    },
-  });
 
   const buildRunRecordSnapshot = (): RunRecordSnapshot => ({
     updated_at: new Date().toISOString(),
@@ -207,26 +192,8 @@ export function AppShell() {
     fit_results: summarizeFitResults(fitResults, extractedFilenames),
   });
 
-  const queueRunRecordSave = () => {
-    if (!runId) return Promise.resolve();
-
-    const payload = {
-      run_id: runId,
-      keep_record: keepRecord,
-      record: buildRunRecordSnapshot(),
-    };
-
-    runRecordSaveQueue.current = runRecordSaveQueue.current
-      .catch(() => {})
-      .then(async () => {
-        try {
-          await apiClient.post('/save_run_record', payload);
-        } catch (error) {
-          console.warn('Run record save error:', getErrorMessage(error, 'save_run_record failed'));
-        }
-      });
-
-    return runRecordSaveQueue.current;
+  const saveRunRecord = () => {
+    return queueSave(runId, keepRecord, buildRunRecordSnapshot());
   };
 
   const clearFitImages = (message = 'Run fitting to generate result images.') => {
@@ -239,7 +206,7 @@ export function AppShell() {
   ) => {
     setFitResults({});
     clearFitImages(message);
-    void queueRunRecordSave();
+    void saveRunRecord();
   };
 
   const cleanupRun = async (targetRunId: string) => {
@@ -420,65 +387,30 @@ export function AppShell() {
         `Extracted ${body.succeeded.length} file(s). Select a file above to view its waterfall.`,
       );
       toast.success(`Extracted ${body.succeeded.length} file(s).`);
-      await queueRunRecordSave();
+      // Use queueSave manually here to guarantee nextRunId gets saved via snapshot
+      await queueSave(nextRunId, Boolean(body.keep_record), {
+        updated_at: new Date().toISOString(),
+        keep_record: Boolean(body.keep_record),
+        source_folder: currentFolderPath,
+        selected_files: [...selectedFiles],
+        extracted_files: [...body.succeeded],
+        settings: {
+          extraction: { mode, start_wn: defaultStartWn, end_wn: defaultEndWn },
+          integration: { start_wn: defaultStartWn, end_wn: defaultEndWn, baseline_mode: 'none' },
+          waterfall: { gap: 0, max_lines: waterfallMaxLines, time_range: null, color_scheme: 'None' },
+          figure_render: figureSettings,
+          fit_ranges: {},
+        },
+        active_views: { spectra_filename: null, kinetics_filename: body.succeeded[0] ?? null },
+        artifacts: { overlay_image: null, normalized_image: null },
+        fit_results: {},
+      });
     } catch (error) {
       toast.error(getErrorMessage(error, 'Extraction failed'));
       setVizStatusMsg(`Extraction error: ${getErrorMessage(error, 'Extraction failed')}`);
     } finally {
       setExtractPending(false);
     }
-  };
-
-  const refreshFitFiguresForStyleChange = async (nextSettings: FigureSettingsState) => {
-    if (!runId) return;
-    const payload = buildSuccessfulSeriesPayload(extractedFilenames, fitResults, getFileColor);
-    if (!payload.length) return;
-
-    setFitSummaryMsg('Refreshing fit figures…');
-
-    try {
-      const response = await apiClient.post('/render-fit-figures', {
-        run_id: runId,
-        series: payload,
-        figure_settings: buildFigureRenderSettings(nextSettings),
-      });
-      setFitFigureUrls({
-        overlay: response.data.overlay_url,
-        normalized: response.data.normalized_url,
-      });
-      setFitSummaryMsg('Updated figure settings applied to the right-hand images.');
-      await queueRunRecordSave();
-    } catch (error) {
-      setFitFigureUrls({ overlay: '', normalized: '' });
-      setFitSummaryMsg(
-        `Figure refresh failed: ${getErrorMessage(error, 'Failed to render fit figures')}`,
-      );
-    }
-  };
-
-  const handleFigurePanelChange = (
-    panel: 'overlay' | 'normalized',
-    key: keyof FigurePanelSettings,
-    value: string | boolean,
-  ) => {
-    const nextSettings = {
-      ...figureSettings,
-      [panel]: {
-        ...figureSettings[panel],
-        [key]: value,
-      },
-    } as FigureSettingsState;
-    setFigureSettings(nextSettings);
-    void refreshFitFiguresForStyleChange(nextSettings);
-  };
-
-  const handleFigureColorSchemeChange = (value: string) => {
-    const nextSettings = {
-      ...figureSettings,
-      colorScheme: value,
-    };
-    setFigureSettings(nextSettings);
-    void refreshFitFiguresForStyleChange(nextSettings);
   };
 
   const handleVisibleTimeRangeChange = (filename: string, range: NumericRange) => {
@@ -680,7 +612,7 @@ export function AppShell() {
         `Fits completed, but figure rendering failed: ${getErrorMessage(error, 'render failed')}`,
       );
     } finally {
-      await queueRunRecordSave();
+      await saveRunRecord();
       setRunFitsPending(false);
     }
   };
@@ -788,7 +720,7 @@ export function AppShell() {
         keepRecord={keepRecord}
         onKeepRecordChange={(value) => {
           setKeepRecord(value);
-          void queueRunRecordSave();
+          void saveRunRecord();
         }}
         folderInput={folderInput}
         onFolderInputChange={setFolderInput}

@@ -24,16 +24,18 @@ export function SafePlot({
 
     async function loadPlot() {
       try {
-        const [{ default: createPlotComponent }, plotlyModule] = await Promise.all([
+        const [PlotlyModule, createPlotlyModule] = await Promise.all([
+          // @ts-expect-error No type declaration for the dist file
+          import('plotly.js/dist/plotly'),
           import('react-plotly.js/factory'),
-          import('plotly.js-basic-dist'),
         ]);
 
         if (cancelled) return;
 
-        const plotly = (plotlyModule as { default?: unknown }).default ?? plotlyModule;
+        const plotly = (PlotlyModule as { default?: unknown }).default ?? PlotlyModule;
+        const createPlotlyComponent = createPlotlyModule.default || createPlotlyModule;
         setLoadedPlot({
-          Component: createPlotComponent(plotly) as PlotComponent,
+          Component: createPlotlyComponent(plotly) as PlotComponent,
         });
       } catch (error) {
         if (cancelled) return;

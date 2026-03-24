@@ -9,6 +9,7 @@ export function usePlotly() {
 
     async function loadPlotly() {
       try {
+        // @ts-expect-error Types are not exposed for the specific dist file
         const module = await import('plotly.js/dist/plotly');
         if (cancelled) return;
         setPlotly(module.default ?? module);

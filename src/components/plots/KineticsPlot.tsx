@@ -129,7 +129,13 @@ export function KineticsPlot({
       .then(() => {
         const plotDiv = plotRef.current as any;
         const axis = plotDiv?._fullLayout?.xaxis;
-        if (axis) {
+        if (
+          axis &&
+          typeof axis._offset === 'number' &&
+          typeof axis._length === 'number' &&
+          typeof axis.l2p === 'function' &&
+          typeof axis.p2l === 'function'
+        ) {
           setAxisMeta({
             offset: axis._offset,
             length: axis._length,
