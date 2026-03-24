@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+.venv
+backend/.venv
+backend/data/runs/*
+!backend/data/runs/.gitkeep
+*.pyc
+__pycache__/
 
 # Editor directories and files
 .vscode/*
