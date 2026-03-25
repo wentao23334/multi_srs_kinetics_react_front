@@ -33,6 +33,7 @@ export function WaterfallPlot({
 }: WaterfallPlotProps) {
   const plotRef = useRef<HTMLDivElement | null>(null);
   const rangeRef = useRef<[number, number]>(integrationRange);
+  const draggingRef = useRef(false);
   const { plotly, errorMessage } = usePlotly();
   const [draftRange, setDraftRange] = useState<[number, number]>(integrationRange);
   const [axisMeta, setAxisMeta] = useState<{ offset: number; length: number; l2p: (value: number) => number; p2l: (value: number) => number } | null>(null);
@@ -190,59 +191,20 @@ export function WaterfallPlot({
             p2l: axis.p2l.bind(axis),
           });
         }
-        plotDiv?.removeAllListeners?.('plotly_relayout');
-        plotDiv?.on?.('plotly_relayout', (eventData: Record<string, number>) => {
-          let changed = false;
-          let newStart = integrationRange[0];
-          let newEnd = integrationRange[1];
-
-          if (eventData['shapes[0].x0'] !== undefined) {
-            newStart = Number(eventData['shapes[0].x0']);
-            changed = true;
-          } else if (eventData['shapes[0].x1'] !== undefined) {
-            newStart = Number(eventData['shapes[0].x1']);
-            changed = true;
-          }
-
-          if (eventData['shapes[1].x0'] !== undefined) {
-            newEnd = Number(eventData['shapes[1].x0']);
-            changed = true;
-          } else if (eventData['shapes[1].x1'] !== undefined) {
-            newEnd = Number(eventData['shapes[1].x1']);
-            changed = true;
-          }
-
-          if (changed) {
-            emitIntegrationRangeChange(
-              [Math.min(newStart, newEnd), Math.max(newStart, newEnd)],
-              true,
-            );
-          }
-        });
       })
       .catch(() => {});
 
     return () => {
-      const plotDiv = plotRef.current as any;
-      plotDiv?.removeAllListeners?.('plotly_relayout');
       setAxisMeta(null);
     };
   }, [colorScheme, dataset, gap, integrationRange, maxLines, plotly, timeRangeInput]);
-
-  const updateLine = (nextRange: [number, number]) => {
-    if (!plotly || !plotRef.current) return;
-    plotly.relayout(plotRef.current, {
-      'shapes[0].x0': nextRange[0],
-      'shapes[0].x1': nextRange[0],
-      'shapes[1].x0': nextRange[1],
-      'shapes[1].x1': nextRange[1],
-    }).catch(() => {});
-  };
 
   const startDrag = (handle: 'start' | 'end') => (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!axisMeta || !plotRef.current) return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    draggingRef.current = true;
 
     const plotDiv = plotRef.current;
 
@@ -257,12 +219,12 @@ export function WaterfallPlot({
         : [Math.min(baseRange[0], value), Math.max(baseRange[0], value)] as [number, number];
       setDraftRange(nextRange);
       rangeRef.current = nextRange;
-      updateLine(nextRange);
     };
 
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      draggingRef.current = false;
       emitIntegrationRangeChange(rangeRef.current, true);
     };
 

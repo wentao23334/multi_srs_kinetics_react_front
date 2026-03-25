@@ -40,20 +40,23 @@ function FilePills({
   if (!filenames.length) return null;
 
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
+    <div className="mb-4 flex flex-wrap gap-2.5">
       {filenames.map((filename) => {
         const active = activeFile === filename;
         return (
           <button
             key={filename}
             onClick={() => onSelect(filename)}
-            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+            className={`relative overflow-hidden rounded-full border px-4 py-1.5 text-xs font-medium transition-all duration-300 hover:scale-[1.02] active:scale-95 ${
               active
-                ? 'border-blue-500/50 bg-blue-500/15 text-blue-100'
-                : 'border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-500'
+                ? 'border-blue-400/50 bg-blue-500/20 text-blue-100 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
+                : 'border-white/10 bg-black/20 text-slate-400 hover:bg-white/10 hover:text-slate-200 hover:border-white/20'
             }`}
           >
-            {filename.length > 30 ? `…${filename.slice(-27)}` : filename}
+            {active && (
+              <span className="absolute inset-0 block rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10" />
+            )}
+            <span className="relative z-10">{filename.length > 30 ? `…${filename.slice(-27)}` : filename}</span>
           </button>
         );
       })}
@@ -86,23 +89,29 @@ export function MainWorkspace({
   onIntegrationRangeChange,
 }: MainWorkspaceProps) {
   return (
-    <main className="relative flex h-full flex-1 flex-col overflow-hidden bg-slate-950">
-      <header className="flex h-14 items-center justify-between border-b border-slate-800 bg-slate-900/50 px-6">
-        <div className="flex items-center gap-2 text-sm">
-          <span className={`rounded px-2 py-1 ${currentStep >= 1 ? 'bg-blue-900 text-blue-100 font-medium' : 'text-slate-400'}`}>1. Extract</span>
-          <span className="text-slate-600">→</span>
-          <span className={`rounded px-2 py-1 ${currentStep >= 2 ? 'bg-amber-900 text-amber-100 font-medium' : 'text-slate-400'}`}>2. Integrate</span>
-          <span className="text-slate-600">→</span>
-          <span className={`rounded px-2 py-1 ${currentStep >= 3 ? 'bg-purple-900 text-purple-100 font-medium' : 'text-slate-400'}`}>3. Global Fit</span>
+    <main className="relative flex h-full flex-1 flex-col overflow-hidden bg-transparent">
+      <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/[0.04] bg-black/15 px-8 backdrop-blur-md">
+        <div className="flex items-center gap-3 text-xs font-semibold tracking-wide">
+          <span className={`rounded-full px-3 py-1.5 transition-all duration-500 ${currentStep >= 1 ? 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-300 border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]' : 'bg-white/5 text-slate-500 border border-transparent'}`}>
+            1. Extract
+          </span>
+          <span className="text-slate-600/50">―</span>
+          <span className={`rounded-full px-3 py-1.5 transition-all duration-500 ${currentStep >= 2 ? 'bg-gradient-to-r from-amber-500/20 to-orange-600/20 text-amber-300 border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-slate-500 border border-transparent'}`}>
+            2. Integrate
+          </span>
+          <span className="text-slate-600/50">―</span>
+          <span className={`rounded-full px-3 py-1.5 transition-all duration-500 ${currentStep >= 3 ? 'bg-gradient-to-r from-purple-500/20 to-fuchsia-600/20 text-purple-300 border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'bg-white/5 text-slate-500 border border-transparent'}`}>
+            3. Global Fit
+          </span>
         </div>
-        <p className="max-w-[30rem] truncate text-xs text-slate-400">{vizStatusMsg}</p>
+        <p className="max-w-[30rem] truncate text-xs font-medium text-slate-400 bg-white/5 px-4 py-1.5 rounded-full border border-white/5">{vizStatusMsg}</p>
       </header>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-6">
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-600">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-slate-300">SRS Waterfall</h3>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+      <div className="flex-1 space-y-6 overflow-y-auto p-8 scroll-smooth">
+        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-6 backdrop-blur-xl transition-all hover:bg-white/[0.05] hover:border-white/[0.10]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+            <h3 className="text-base font-bold text-white/90">SRS Waterfall</h3>
+            <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-300">
               <label className="flex items-center gap-2">
                 <span>Gap</span>
                 <input
@@ -110,7 +119,7 @@ export function MainWorkspace({
                   value={waterfallGap}
                   step="any"
                   onChange={(event) => onWaterfallGapChange(Number(event.target.value))}
-                  className="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
+                  className="w-20 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
                 />
               </label>
               <label className="flex items-center gap-2">
@@ -121,7 +130,7 @@ export function MainWorkspace({
                   min={1}
                   max={200}
                   onChange={(event) => onWaterfallMaxLinesChange(Number(event.target.value))}
-                  className="w-16 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
+                  className="w-16 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
                 />
               </label>
               <label className="flex items-center gap-2">
@@ -130,7 +139,7 @@ export function MainWorkspace({
                   value={waterfallTimeRangeInput}
                   onChange={(event) => onWaterfallTimeRangeInputChange(event.target.value)}
                   placeholder="1,5"
-                  className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
+                  className="w-28 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
                 />
               </label>
               <label className="flex items-center gap-2">
@@ -138,10 +147,10 @@ export function MainWorkspace({
                 <select
                   value={waterfallColorScheme}
                   onChange={(event) => onWaterfallColorSchemeChange(event.target.value)}
-                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
+                  className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40 appearance-none pointer-events-auto"
                 >
                   {['None', 'viridis', 'magma', 'plasma', 'inferno', 'cividis', 'Greys', 'RdBu', 'RdBu_r', 'Spectral', 'coolwarm'].map((scale) => (
-                    <option key={scale} value={scale}>
+                    <option key={scale} value={scale} className="bg-slate-900">
                       {scale}
                     </option>
                   ))}
@@ -170,9 +179,9 @@ export function MainWorkspace({
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-600">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-slate-300">Area-Time Kinetics</h3>
+        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-6 backdrop-blur-xl transition-all hover:bg-white/[0.05] hover:border-white/[0.10]">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-base font-bold text-white/90">Area-Time Kinetics</h3>
           </div>
 
           <FilePills

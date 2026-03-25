@@ -17,6 +17,7 @@ export function KineticsPlot({
 }: KineticsPlotProps) {
   const plotRef = useRef<HTMLDivElement | null>(null);
   const rangeRef = useRef<NumericRange | null>(fitRange);
+  const draggingRef = useRef(false);
   const { plotly, errorMessage } = usePlotly();
   const [draftRange, setDraftRange] = useState<NumericRange | null>(fitRange);
   const [axisMeta, setAxisMeta] = useState<{ offset: number; length: number; l2p: (value: number) => number; p2l: (value: number) => number } | null>(null);
@@ -143,61 +144,22 @@ export function KineticsPlot({
             p2l: axis.p2l.bind(axis),
           });
         }
-        plotDiv?.removeAllListeners?.('plotly_relayout');
-        plotDiv?.on?.('plotly_relayout', (eventData: Record<string, number>) => {
-          let newStart = resolvedRange.start;
-          let newEnd = resolvedRange.end;
-          let changed = false;
-
-          if (eventData['shapes[0].x0'] !== undefined) {
-            newStart = Number(eventData['shapes[0].x0']);
-            changed = true;
-          } else if (eventData['shapes[0].x1'] !== undefined) {
-            newStart = Number(eventData['shapes[0].x1']);
-            changed = true;
-          }
-
-          if (eventData['shapes[1].x0'] !== undefined) {
-            newEnd = Number(eventData['shapes[1].x0']);
-            changed = true;
-          } else if (eventData['shapes[1].x1'] !== undefined) {
-            newEnd = Number(eventData['shapes[1].x1']);
-            changed = true;
-          }
-
-          if (changed) {
-            emitFitRangeChange({
-              start: Math.min(newStart, newEnd),
-              end: Math.max(newStart, newEnd),
-            });
-          }
-        });
       })
       .catch(() => {});
 
     return () => {
-      const plotDiv = plotRef.current as any;
-      plotDiv?.removeAllListeners?.('plotly_relayout');
       setAxisMeta(null);
     };
   }, [filename, fitRange, integrationData, plotly]);
 
   const currentRange = draftRange ?? fitRange;
 
-  const updateLine = (nextRange: NumericRange) => {
-    if (!plotly || !plotRef.current) return;
-    plotly.relayout(plotRef.current, {
-      'shapes[0].x0': nextRange.start,
-      'shapes[0].x1': nextRange.start,
-      'shapes[1].x0': nextRange.end,
-      'shapes[1].x1': nextRange.end,
-    }).catch(() => {});
-  };
-
   const startDrag = (handle: 'start' | 'end') => (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!axisMeta || !currentRange || !plotRef.current || !filename) return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    draggingRef.current = true;
 
     const plotDiv = plotRef.current;
 
@@ -219,12 +181,12 @@ export function KineticsPlot({
           };
       setDraftRange(nextRange);
       rangeRef.current = nextRange;
-      updateLine(nextRange);
     };
 
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      draggingRef.current = false;
       const finalRange = rangeRef.current ?? currentRange;
       if (finalRange) {
         emitFitRangeChange(finalRange);

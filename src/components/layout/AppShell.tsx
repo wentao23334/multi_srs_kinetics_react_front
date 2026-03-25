@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '../../lib/apiClient';
 import {
@@ -32,6 +32,15 @@ import { LeftControlPanel } from './LeftControlPanel';
 import { MainWorkspace } from './MainWorkspace';
 import { RightPreviewPanel } from './RightPreviewPanel';
 
+const LAYOUT_STORAGE_KEY = 'multi-srs-layout-widths';
+const LEFT_PANEL_DEFAULT = 336;
+const RIGHT_PANEL_DEFAULT = 320;
+const LEFT_PANEL_MIN = 296;
+const LEFT_PANEL_MAX = 460;
+const RIGHT_PANEL_MIN = 288;
+const RIGHT_PANEL_MAX = 420;
+const RESIZE_HANDLE_WIDTH = 12;
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (axios.isAxiosError(error)) {
     const detail = error.response?.data?.detail;
@@ -42,13 +51,113 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getMinimumMainWidth(containerWidth: number) {
+  return Math.min(820, Math.max(480, containerWidth - LEFT_PANEL_MIN - RIGHT_PANEL_MIN - RESIZE_HANDLE_WIDTH * 2));
+}
+
+function clampPaneWidths(containerWidth: number, left: number, right: number) {
+  const minMainWidth = getMinimumMainWidth(containerWidth);
+  const maxRightForLeftMin = containerWidth - RESIZE_HANDLE_WIDTH * 2 - LEFT_PANEL_MIN - minMainWidth;
+  const nextRight = clamp(
+    right,
+    RIGHT_PANEL_MIN,
+    Math.max(RIGHT_PANEL_MIN, Math.min(RIGHT_PANEL_MAX, maxRightForLeftMin)),
+  );
+
+  const maxLeft = containerWidth - RESIZE_HANDLE_WIDTH * 2 - nextRight - minMainWidth;
+  const nextLeft = clamp(
+    left,
+    LEFT_PANEL_MIN,
+    Math.max(LEFT_PANEL_MIN, Math.min(LEFT_PANEL_MAX, maxLeft)),
+  );
+
+  const maxRight = containerWidth - RESIZE_HANDLE_WIDTH * 2 - nextLeft - minMainWidth;
+  return {
+    left: nextLeft,
+    right: clamp(
+      nextRight,
+      RIGHT_PANEL_MIN,
+      Math.max(RIGHT_PANEL_MIN, Math.min(RIGHT_PANEL_MAX, maxRight)),
+    ),
+  };
+}
+
+function readStoredPaneWidths() {
+  if (typeof window === 'undefined') {
+    return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.left === 'number' && typeof parsed?.right === 'number') {
+      return { left: parsed.left, right: parsed.right };
+    }
+  } catch {
+    // Ignore invalid persisted layout state.
+  }
+
+  return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
+}
+
+type ResizeSide = 'left' | 'right';
+
+function ResizeHandle({
+  side,
+  active,
+  onPointerDown,
+}: {
+  side: ResizeSide;
+  active: boolean;
+  onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <div className="relative z-20 flex h-full w-4 shrink-0 items-center justify-center">
+      <button
+        type="button"
+        aria-label={side === 'left' ? 'Resize left panel' : 'Resize right panel'}
+        data-resize-handle={side}
+        onPointerDown={onPointerDown}
+        className="group relative flex h-full w-4 cursor-col-resize touch-none items-center justify-center outline-none"
+      >
+        <span
+          className={`pointer-events-none absolute inset-y-4 left-1/2 w-px -translate-x-1/2 rounded-full transition-colors ${
+            active ? 'bg-blue-400/40' : 'bg-white/[0.05] group-hover:bg-white/[0.10]'
+          }`}
+        />
+        <span
+          className={`pointer-events-none relative h-16 w-1.5 rounded-full border transition-all ${
+            active
+              ? 'border-blue-400/40 bg-blue-400/30 shadow-[0_0_16px_rgba(96,165,250,0.25)]'
+              : 'border-white/[0.08] bg-white/[0.10] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 export function AppShell() {
+  const layoutRef = useRef<HTMLDivElement | null>(null);
   const { queueSave } = useRunRecord();
   const integrationDebounceRef = useRef<number | null>(null);
   const unloadActionRef = useRef<string>('');
+  const dragRef = useRef<{
+    side: ResizeSide;
+    startX: number;
+    startLeft: number;
+    startRight: number;
+  } | null>(null);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [keepRecord, setKeepRecord] = useState(false);
+  const [draggingSide, setDraggingSide] = useState<ResizeSide | null>(null);
+  const [paneWidths, setPaneWidths] = useState(readStoredPaneWidths);
 
   const [folderInput, setFolderInput] = useState('');
   const [currentFolderPath, setCurrentFolderPath] = useState('');
@@ -448,7 +557,7 @@ export function AppShell() {
     };
 
     if (shouldDebounce) {
-      integrationDebounceRef.current = window.setTimeout(trigger, 300);
+      integrationDebounceRef.current = window.setTimeout(trigger, 450);
     } else {
       trigger();
     }
@@ -706,6 +815,25 @@ export function AppShell() {
   ]);
 
   useEffect(() => {
+    const updateLayoutBounds = () => {
+      const containerWidth = layoutRef.current?.clientWidth;
+      if (!containerWidth) return;
+      setPaneWidths((prev) => clampPaneWidths(containerWidth, prev.left, prev.right));
+    };
+
+    updateLayoutBounds();
+    window.addEventListener('resize', updateLayoutBounds);
+    return () => {
+      window.removeEventListener('resize', updateLayoutBounds);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(paneWidths));
+  }, [paneWidths]);
+
+  useEffect(() => {
     return () => {
       if (integrationDebounceRef.current) {
         window.clearTimeout(integrationDebounceRef.current);
@@ -713,93 +841,162 @@ export function AppShell() {
     };
   }, []);
 
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = dragRef.current;
+      const containerWidth = layoutRef.current?.clientWidth;
+      if (!dragState || !containerWidth) return;
+
+      const delta = event.clientX - dragState.startX;
+      const nextLeft = dragState.side === 'left' ? dragState.startLeft + delta : dragState.startLeft;
+      const nextRight = dragState.side === 'right' ? dragState.startRight - delta : dragState.startRight;
+      setPaneWidths(clampPaneWidths(containerWidth, nextLeft, nextRight));
+    };
+
+    const stopResize = () => {
+      dragRef.current = null;
+      setDraggingSide(null);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResize);
+    window.addEventListener('pointercancel', stopResize);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResize);
+      window.removeEventListener('pointercancel', stopResize);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, []);
+
+  const handleResizeStart = (side: ResizeSide) => (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    if (event.pointerType === 'touch') return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = {
+      side,
+      startX: event.clientX,
+      startLeft: paneWidths.left,
+      startRight: paneWidths.right,
+    };
+    setDraggingSide(side);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  };
+
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-950 font-sans text-slate-300">
-      <LeftControlPanel
-        currentStep={currentStep}
-        keepRecord={keepRecord}
-        onKeepRecordChange={(value) => {
-          setKeepRecord(value);
-          void saveRunRecord();
-        }}
-        folderInput={folderInput}
-        onFolderInputChange={setFolderInput}
-        foundSrsFiles={foundSrsFiles}
-        selectedFiles={selectedFiles}
-        onToggleSelectAll={(checked) =>
-          setSelectedFiles(checked ? [...foundSrsFiles] : [])
-        }
-        onToggleFile={(filename, checked) =>
-          setSelectedFiles((prev) =>
-            checked
-              ? prev.includes(filename)
-                ? prev
-                : [...prev, filename]
-              : prev.filter((item) => item !== filename),
-          )
-        }
-        applyFolderPending={applyFolderPending}
-        onApplyFolder={handleApplyFolder}
-        mode={mode}
-        onModeChange={setMode}
-        defaultStartWn={defaultStartWn}
-        onDefaultStartWnChange={setDefaultStartWn}
-        defaultEndWn={defaultEndWn}
-        onDefaultEndWnChange={setDefaultEndWn}
-        extractPending={extractPending}
-        onExtractAll={handleExtractAll}
-        integrationRange={globalIntegrationRange}
-        onIntegrationRangeChange={(range) => handleIntegrationRangeChange(range, false)}
-        baselineMode={baselineMode}
-        onBaselineModeChange={handleBaselineModeChange}
-        onIntegrate={handleIntegrate}
-        extractedFilenames={extractedFilenames}
-        fitRanges={fitRanges}
-        activeKineticsFile={activeKineticsFile}
-        onSelectKineticsFile={(filename) => void selectKineticsFile(filename)}
-        onFitRangeInputChange={(filename, bound, value) =>
-          void handleFitRangeInputChange(filename, bound, value)
-        }
-        figureSettings={figureSettings}
-        onFigureColorSchemeChange={handleFigureColorSchemeChange}
-        onFigurePanelChange={handleFigurePanelChange}
+    <div
+      ref={layoutRef}
+      className={`flex h-screen w-full overflow-hidden bg-transparent text-slate-200 ${
+        draggingSide ? 'select-none' : ''
+      }`}
+    >
+      <div className="shrink-0" style={{ width: paneWidths.left }}>
+        <LeftControlPanel
+          currentStep={currentStep}
+          keepRecord={keepRecord}
+          onKeepRecordChange={(value) => {
+            setKeepRecord(value);
+            void saveRunRecord();
+          }}
+          folderInput={folderInput}
+          onFolderInputChange={setFolderInput}
+          foundSrsFiles={foundSrsFiles}
+          selectedFiles={selectedFiles}
+          onToggleSelectAll={(checked) =>
+            setSelectedFiles(checked ? [...foundSrsFiles] : [])
+          }
+          onToggleFile={(filename, checked) =>
+            setSelectedFiles((prev) =>
+              checked
+                ? prev.includes(filename)
+                  ? prev
+                  : [...prev, filename]
+                : prev.filter((item) => item !== filename),
+            )
+          }
+          applyFolderPending={applyFolderPending}
+          onApplyFolder={handleApplyFolder}
+          mode={mode}
+          onModeChange={setMode}
+          defaultStartWn={defaultStartWn}
+          onDefaultStartWnChange={setDefaultStartWn}
+          defaultEndWn={defaultEndWn}
+          onDefaultEndWnChange={setDefaultEndWn}
+          extractPending={extractPending}
+          onExtractAll={handleExtractAll}
+          integrationRange={globalIntegrationRange}
+          onIntegrationRangeChange={(range) => handleIntegrationRangeChange(range, false)}
+          baselineMode={baselineMode}
+          onBaselineModeChange={handleBaselineModeChange}
+          onIntegrate={handleIntegrate}
+          extractedFilenames={extractedFilenames}
+          fitRanges={fitRanges}
+          activeKineticsFile={activeKineticsFile}
+          onSelectKineticsFile={(filename) => void selectKineticsFile(filename)}
+          onFitRangeInputChange={(filename, bound, value) =>
+            void handleFitRangeInputChange(filename, bound, value)
+          }
+          figureSettings={figureSettings}
+          onFigureColorSchemeChange={handleFigureColorSchemeChange}
+          onFigurePanelChange={handleFigurePanelChange}
+        />
+      </div>
+      <ResizeHandle
+        side="left"
+        active={draggingSide === 'left'}
+        onPointerDown={handleResizeStart('left')}
       />
-      <MainWorkspace
-        currentStep={currentStep}
-        vizStatusMsg={vizStatusMsg}
-        extractedFilenames={extractedFilenames}
-        activeWaterfallFile={activeWaterfallFile}
-        activeKineticsFile={activeKineticsFile}
-        onSelectWaterfallFile={(filename) => void selectWaterfallFile(filename)}
-        onSelectKineticsFile={(filename) => void selectKineticsFile(filename)}
-        currentDataset={currentDataset}
-        currentIntegrationData={currentIntegrationData}
-        fitRange={activeKineticsFile ? fitRanges[activeKineticsFile] ?? null : null}
-        onFitRangeChange={(filename, range) => void handleFitRangeChange(filename, range)}
-        integrationRange={globalIntegrationRange}
-        waterfallGap={waterfallGap}
-        onWaterfallGapChange={setWaterfallGap}
-        waterfallMaxLines={waterfallMaxLines}
-        onWaterfallMaxLinesChange={setWaterfallMaxLines}
-        waterfallTimeRangeInput={waterfallTimeRangeInput}
-        onWaterfallTimeRangeInputChange={setWaterfallTimeRangeInput}
-        waterfallColorScheme={waterfallColorScheme}
-        onWaterfallColorSchemeChange={setWaterfallColorScheme}
-        onVisibleTimeRangeChange={handleVisibleTimeRangeChange}
-        onIntegrationRangeChange={handleIntegrationRangeChange}
+      <div className="min-w-0 flex-1">
+        <MainWorkspace
+          currentStep={currentStep}
+          vizStatusMsg={vizStatusMsg}
+          extractedFilenames={extractedFilenames}
+          activeWaterfallFile={activeWaterfallFile}
+          activeKineticsFile={activeKineticsFile}
+          onSelectWaterfallFile={(filename) => void selectWaterfallFile(filename)}
+          onSelectKineticsFile={(filename) => void selectKineticsFile(filename)}
+          currentDataset={currentDataset}
+          currentIntegrationData={currentIntegrationData}
+          fitRange={activeKineticsFile ? fitRanges[activeKineticsFile] ?? null : null}
+          onFitRangeChange={(filename, range) => void handleFitRangeChange(filename, range)}
+          integrationRange={globalIntegrationRange}
+          waterfallGap={waterfallGap}
+          onWaterfallGapChange={setWaterfallGap}
+          waterfallMaxLines={waterfallMaxLines}
+          onWaterfallMaxLinesChange={setWaterfallMaxLines}
+          waterfallTimeRangeInput={waterfallTimeRangeInput}
+          onWaterfallTimeRangeInputChange={setWaterfallTimeRangeInput}
+          waterfallColorScheme={waterfallColorScheme}
+          onWaterfallColorSchemeChange={setWaterfallColorScheme}
+          onVisibleTimeRangeChange={handleVisibleTimeRangeChange}
+          onIntegrationRangeChange={handleIntegrationRangeChange}
+        />
+      </div>
+      <ResizeHandle
+        side="right"
+        active={draggingSide === 'right'}
+        onPointerDown={handleResizeStart('right')}
       />
-      <RightPreviewPanel
-        fitSummaryMsg={fitSummaryMsg}
-        fitStatusBadge={fitStatusBadge}
-        fitResultCount={fitResultCount}
-        fitNormalizedMeta={fitNormalizedMeta}
-        fitFigureUrls={fitFigureUrls}
-        fitResults={fitResults}
-        extractedFilenames={extractedFilenames}
-        getFileColor={getFileColor}
-        onRunAllFits={() => void runAllFits()}
-        runFitsPending={runFitsPending}
-      />
+      <div className="shrink-0" style={{ width: paneWidths.right }}>
+        <RightPreviewPanel
+          fitSummaryMsg={fitSummaryMsg}
+          fitStatusBadge={fitStatusBadge}
+          fitResultCount={fitResultCount}
+          fitNormalizedMeta={fitNormalizedMeta}
+          fitFigureUrls={fitFigureUrls}
+          fitResults={fitResults}
+          extractedFilenames={extractedFilenames}
+          getFileColor={getFileColor}
+          onRunAllFits={() => void runAllFits()}
+          runFitsPending={runFitsPending}
+        />
+      </div>
     </div>
   );
 }
