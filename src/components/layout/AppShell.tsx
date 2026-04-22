@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { toast } from 'sonner';
 import { apiClient } from '../../lib/apiClient';
 import {
+  buildHeatmapPayload,
+  buildWaterfallTracePayload,
   formatRangeInput,
   getSnappedRange,
   isFitError,
@@ -17,6 +19,8 @@ import type {
   ExtractAllResponse,
   GetDatasetResponse,
   IntegrateResponse,
+  RenderFitFiguresResponse,
+  RenderSpectralFigureResponse,
 } from '../../types/api';
 import type {
   DatasetCache,
@@ -107,6 +111,20 @@ function readStoredPaneWidths() {
 
 type ResizeSide = 'left' | 'right';
 
+type FitFigureUrlsState = {
+  overlay: string;
+  normalized: string;
+  spectral: string;
+  spectralHeatmap: string;
+};
+
+type RunRecordSnapshotOverrides = {
+  fitFigureUrls?: FitFigureUrlsState;
+  fitFiguresStale?: boolean;
+  fitResults?: FitResultMap;
+  keepRecord?: boolean;
+};
+
 function ResizeHandle({
   side,
   active,
@@ -188,11 +206,21 @@ export function AppShell() {
   const [waterfallColorScheme, setWaterfallColorScheme] = useState('None');
 
   const [fitResults, setFitResults] = useState<FitResultMap>({});
-  const [fitFigureUrls, setFitFigureUrls] = useState({ overlay: '', normalized: '' });
+  const [fitFigureUrls, setFitFigureUrls] = useState<FitFigureUrlsState>({
+    overlay: '',
+    normalized: '',
+    spectral: '',
+    spectralHeatmap: '',
+  });
+  const [fitFiguresStale, setFitFiguresStale] = useState(false);
   const [fitSummaryMsg, setFitSummaryMsg] = useState(
     'Set fit ranges in Step 3, then run fitting for all selected files.',
   );
   const [runFitsPending, setRunFitsPending] = useState(false);
+  const [spectralFigurePending, setSpectralFigurePending] = useState(false);
+  const [spectralFigureStatus, setSpectralFigureStatus] = useState(
+    'Render the active waterfall view to generate a publication-style spectral figure.',
+  );
   const [vizStatusMsg, setVizStatusMsg] = useState('Extract files to begin.');
 
   // Derive getFileColor early so useFigureSettings can close over it.
@@ -241,14 +269,8 @@ export function AppShell() {
     buildFigureRenderSettings,
     handleFigurePanelChange,
     handleFigureColorSchemeChange,
-  } = useFigureSettings({
-    runId,
-    extractedFilenames,
-    fitResults,
-    getFileColor,
-    onFitSummaryMsg: setFitSummaryMsg,
-    onFitFigureUrls: setFitFigureUrls,
-  });
+    handleSpectralFigureChange,
+  } = useFigureSettings();
 
   // Keep the ref implementation fresh every render so that useFigureSettings
   // and runAllFits always use the current colorScheme and extractedFilenames.
@@ -261,61 +283,98 @@ export function AppShell() {
     return palette[idx % palette.length];
   };
 
-  const buildRunRecordSnapshot = (): RunRecordSnapshot => ({
-    updated_at: new Date().toISOString(),
-    keep_record: keepRecord,
-    source_folder: currentFolderPath,
-    selected_files: [...selectedFiles],
-    extracted_files: [...extractedFilenames],
-    settings: {
-      extraction: {
-        mode,
-        start_wn: defaultStartWn,
-        end_wn: defaultEndWn,
+  const buildRunRecordSnapshot = (
+    overrides: RunRecordSnapshotOverrides = {},
+  ): RunRecordSnapshot => {
+    const snapshotFitFigureUrls = overrides.fitFigureUrls ?? fitFigureUrls;
+    const snapshotFitFiguresStale = overrides.fitFiguresStale ?? fitFiguresStale;
+    const snapshotFitResults = overrides.fitResults ?? fitResults;
+    const snapshotKeepRecord = overrides.keepRecord ?? keepRecord;
+
+    return {
+      updated_at: new Date().toISOString(),
+      keep_record: snapshotKeepRecord,
+      source_folder: currentFolderPath,
+      selected_files: [...selectedFiles],
+      extracted_files: [...extractedFilenames],
+      settings: {
+        extraction: {
+          mode,
+          start_wn: defaultStartWn,
+          end_wn: defaultEndWn,
+        },
+        integration: {
+          start_wn: globalIntegrationRange[0],
+          end_wn: globalIntegrationRange[1],
+          baseline_mode: baselineMode,
+        },
+        waterfall: {
+          gap: waterfallGap,
+          max_lines: waterfallMaxLines,
+          time_range:
+            activeWaterfallFile && waterfallTimeRanges[activeWaterfallFile]
+              ? waterfallTimeRanges[activeWaterfallFile]
+              : null,
+          color_scheme: waterfallColorScheme,
+        },
+        figure_render: figureSettings,
+        fit_ranges: fitRanges,
       },
-      integration: {
-        start_wn: globalIntegrationRange[0],
-        end_wn: globalIntegrationRange[1],
-        baseline_mode: baselineMode,
+      active_views: {
+        spectra_filename: currentDataset?.filename || null,
+        kinetics_filename: activeKineticsFile,
       },
-      waterfall: {
-        gap: waterfallGap,
-        max_lines: waterfallMaxLines,
-        time_range:
-          activeWaterfallFile && waterfallTimeRanges[activeWaterfallFile]
-            ? waterfallTimeRanges[activeWaterfallFile]
+      artifacts: {
+        overlay_image:
+          !snapshotFitFiguresStale && snapshotFitFigureUrls.overlay ? 'fit_overlay.png' : null,
+        normalized_image:
+          !snapshotFitFiguresStale && snapshotFitFigureUrls.normalized
+            ? 'fit_normalized.png'
             : null,
-        color_scheme: waterfallColorScheme,
+        spectral_image: snapshotFitFigureUrls.spectral ? 'spectral_waterfall.png' : null,
+        spectral_heatmap_image: snapshotFitFigureUrls.spectralHeatmap
+          ? 'spectral_heatmap.png'
+          : null,
       },
-      figure_render: figureSettings,
-      fit_ranges: fitRanges,
-    },
-    active_views: {
-      spectra_filename: currentDataset?.filename || null,
-      kinetics_filename: activeKineticsFile,
-    },
-    artifacts: {
-      overlay_image: fitFigureUrls.overlay ? 'fit_overlay.png' : null,
-      normalized_image: fitFigureUrls.normalized ? 'fit_normalized.png' : null,
-    },
-    fit_results: summarizeFitResults(fitResults, extractedFilenames),
-  });
-
-  const saveRunRecord = () => {
-    return queueSave(runId, keepRecord, buildRunRecordSnapshot());
+      fit_results: summarizeFitResults(snapshotFitResults, extractedFilenames),
+    };
   };
 
-  const clearFitImages = (message = 'Run fitting to generate result images.') => {
-    setFitFigureUrls({ overlay: '', normalized: '' });
+  const saveRunRecord = (overrides: RunRecordSnapshotOverrides = {}) => {
+    const snapshotKeepRecord = overrides.keepRecord ?? keepRecord;
+    return queueSave(runId, snapshotKeepRecord, buildRunRecordSnapshot(overrides));
+  };
+
+  const clearRenderedFigures = (
+    message = 'Run fitting to generate result images.',
+    spectralMessage = 'Render the active waterfall view to generate a publication-style spectral figure.',
+  ) => {
+    setFitFigureUrls({ overlay: '', normalized: '', spectral: '', spectralHeatmap: '' });
+    setFitFiguresStale(false);
     setFitSummaryMsg(message);
+    setSpectralFigureStatus(spectralMessage);
   };
 
-  const invalidateFitResultsOnly = (
+  const markFitsStale = (
     message = 'Fit ranges changed. Run fitting again to refresh the right-hand results.',
   ) => {
-    setFitResults({});
-    clearFitImages(message);
-    void saveRunRecord();
+    const hasRenderedFitFigures = Boolean(fitFigureUrls.overlay || fitFigureUrls.normalized);
+    const nextFitResults: FitResultMap = {};
+    setFitResults(nextFitResults);
+    setFitFiguresStale(hasRenderedFitFigures);
+    setFitSummaryMsg(message);
+    void saveRunRecord({
+      fitFiguresStale: hasRenderedFitFigures,
+      fitResults: nextFitResults,
+    });
+  };
+
+  const markSpectralFigureStale = (
+    message = 'Waterfall view changed. Render Spectral Figure again to refresh the right-hand image.',
+  ) => {
+    if (fitFigureUrls.spectral) {
+      setSpectralFigureStatus(message);
+    }
   };
 
   const cleanupRun = async (targetRunId: string) => {
@@ -374,6 +433,9 @@ export function AppShell() {
     if (!targetRunId) return;
     setActiveWaterfallFile(filename);
     setVizStatusMsg(`Loading ${filename}…`);
+    markSpectralFigureStale(
+      `Active waterfall file changed to ${filename}. Render Spectral Figure again to refresh the right-hand image.`,
+    );
 
     try {
       const body = await fetchDataset(filename, targetRunId);
@@ -473,7 +535,10 @@ export function AppShell() {
       setFitRanges({});
       setWaterfallTimeRanges({});
       setFitResults({});
-      setFitFigureUrls({ overlay: '', normalized: '' });
+      clearRenderedFigures(
+        'Set fit ranges in Step 3, then run fitting for all selected files.',
+        'Render the active waterfall view to generate a publication-style spectral figure.',
+      );
       setCurrentDataset(null);
       setActiveWaterfallFile(body.succeeded[0] ?? null);
       setActiveKineticsFile(body.succeeded[0] ?? null);
@@ -481,7 +546,6 @@ export function AppShell() {
       setGlobalIntegrationRange([defaultStartWn, defaultEndWn]);
       setBaselineMode('none');
       setWaterfallTimeRangeInput('');
-      setFitSummaryMsg('Set fit ranges in Step 3, then run fitting for all selected files.');
 
       if (body.failed && Object.keys(body.failed).length > 0) {
         toast.warning(`Some files failed: ${Object.keys(body.failed).length}`);
@@ -511,7 +575,12 @@ export function AppShell() {
           fit_ranges: {},
         },
         active_views: { spectra_filename: null, kinetics_filename: body.succeeded[0] ?? null },
-        artifacts: { overlay_image: null, normalized_image: null },
+        artifacts: {
+          overlay_image: null,
+          normalized_image: null,
+          spectral_image: null,
+          spectral_heatmap_image: null,
+        },
         fit_results: {},
       });
     } catch (error) {
@@ -523,6 +592,9 @@ export function AppShell() {
   };
 
   const handleVisibleTimeRangeChange = (filename: string, range: NumericRange) => {
+    const previous = waterfallTimeRanges[filename];
+    const rangeChanged =
+      !previous || previous.start !== range.start || previous.end !== range.end;
     setWaterfallTimeRanges((prev) => {
       const current = prev[filename];
       if (current && current.start === range.start && current.end === range.end) {
@@ -533,6 +605,9 @@ export function AppShell() {
     if (activeWaterfallFile === filename) {
       const text = formatRangeInput(range.start, range.end);
       setWaterfallTimeRangeInput((prev) => (prev === text ? prev : text));
+      if (rangeChanged) {
+        markSpectralFigureStale();
+      }
     }
   };
 
@@ -540,7 +615,7 @@ export function AppShell() {
     setGlobalIntegrationRange(range);
     setIntegrationCache({});
     setFitRanges({});
-    invalidateFitResultsOnly(
+    markFitsStale(
       'Integration settings changed. Run fitting again to refresh the right-hand results.',
     );
 
@@ -567,7 +642,7 @@ export function AppShell() {
     setBaselineMode(value);
     setIntegrationCache({});
     setFitRanges({});
-    invalidateFitResultsOnly(
+    markFitsStale(
       'Integration settings changed. Run fitting again to refresh the right-hand results.',
     );
     const targetFile = activeKineticsFile || activeWaterfallFile;
@@ -580,7 +655,7 @@ export function AppShell() {
     const targetFile = activeKineticsFile || activeWaterfallFile;
     if (!targetFile) return;
     setCurrentStep(3);
-    invalidateFitResultsOnly(
+    markFitsStale(
       'Integration settings changed. Run fitting again to refresh the right-hand results.',
     );
     setIntegrationCache({});
@@ -600,7 +675,7 @@ export function AppShell() {
     if (activeKineticsFile !== filename) {
       setActiveKineticsFile(filename);
     }
-    invalidateFitResultsOnly();
+    markFitsStale();
   };
 
   const handleFitRangeInputChange = async (
@@ -623,13 +698,113 @@ export function AppShell() {
     await handleFitRangeChange(filename, nextRange);
   };
 
+  const handleWaterfallGapChange = (value: number) => {
+    setWaterfallGap(value);
+    markSpectralFigureStale();
+  };
+
+  const handleWaterfallMaxLinesChange = (value: number) => {
+    setWaterfallMaxLines(value);
+    markSpectralFigureStale();
+  };
+
+  const handleWaterfallTimeRangeInputChange = (value: string) => {
+    setWaterfallTimeRangeInput(value);
+    markSpectralFigureStale();
+  };
+
+  const handleWaterfallColorSchemeChange = (value: string) => {
+    setWaterfallColorScheme(value);
+    markSpectralFigureStale();
+  };
+
+  const handleSpectralFigureInputChange = (
+    key: 'title' | 'xlabel' | 'ylabel' | 'xRangeInput' | 'yRangeInput',
+    value: string,
+  ) => {
+    handleSpectralFigureChange(key, value);
+    markSpectralFigureStale('Spectral figure settings changed. Render Spectral Figure again to refresh the image.');
+  };
+
+  const handleFitFigurePanelChange = (
+    panel: 'overlay' | 'normalized',
+    key: 'xlabel' | 'ylabel' | 'xRangeInput' | 'yRangeInput' | 'showLabels' | 'labelOffsetInput',
+    value: string | boolean,
+  ) => {
+    handleFigurePanelChange(panel, key, value);
+    markFitsStale('Fit figure settings changed. Click Run All Fits to refresh the right-hand images.');
+  };
+
+  const handleFitFigureColorSchemeChange = (value: string) => {
+    handleFigureColorSchemeChange(value);
+    markFitsStale('Fit figure settings changed. Click Run All Fits to refresh the right-hand images.');
+  };
+
+  const renderSpectralFigure = async () => {
+    const filename = activeWaterfallFile;
+    if (!runId || !filename) {
+      toast.error('Select a waterfall file before rendering the spectral figure.');
+      return;
+    }
+
+    setSpectralFigurePending(true);
+    setSpectralFigureStatus(`Rendering spectral figure for ${filename}…`);
+
+    try {
+      const dataset = currentDataset?.filename === filename
+        ? currentDataset
+        : await fetchDataset(filename);
+      const { traces, visibleRange } = buildWaterfallTracePayload(
+        dataset,
+        waterfallGap,
+        waterfallMaxLines,
+        waterfallTimeRangeInput,
+        waterfallColorScheme,
+      );
+      const settings = buildFigureRenderSettings().spectral;
+      const heatmap = buildHeatmapPayload(
+        dataset,
+        waterfallTimeRangeInput,
+        waterfallColorScheme,
+      );
+      const response = await apiClient.post<RenderSpectralFigureResponse>('/render-spectral-figure', {
+        run_id: runId,
+        filename,
+        traces,
+        heatmap: {
+          x: heatmap.x,
+          y: heatmap.y,
+          z: heatmap.z,
+          color_scale: heatmap.colorScale,
+        },
+        figure_settings: {
+          ...settings,
+          title: settings.title || `SRS Waterfall — ${filename}`,
+        },
+      });
+      const nextFitFigureUrls: FitFigureUrlsState = {
+        ...fitFigureUrls,
+        spectral: response.data.spectral_url,
+        spectralHeatmap: response.data.spectral_heatmap_url,
+      };
+      setFitFigureUrls(nextFitFigureUrls);
+      setSpectralFigureStatus(
+        `Rendered spectral figure for ${filename} (${formatRangeInput(visibleRange.start, visibleRange.end)}).`,
+      );
+      await saveRunRecord({ fitFigureUrls: nextFitFigureUrls });
+    } catch (error) {
+      setSpectralFigureStatus(getErrorMessage(error, 'Failed to render spectral figure.'));
+      toast.error(getErrorMessage(error, 'Failed to render spectral figure'));
+    } finally {
+      setSpectralFigurePending(false);
+    }
+  };
+
   const runAllFits = async () => {
     if (!runId || !extractedFilenames.length) return;
 
     setRunFitsPending(true);
     setFitSummaryMsg(`Running fits for ${extractedFilenames.length} file(s)…`);
-    setFitResults({});
-    setFitFigureUrls({ overlay: '', normalized: '' });
 
     const nextResults: FitResultMap = {};
     let successCount = 0;
@@ -694,34 +869,48 @@ export function AppShell() {
       nextResults,
       getFileColor,
     );
+    let nextFitFigureUrls: FitFigureUrlsState = {
+      ...fitFigureUrls,
+      overlay: '',
+      normalized: '',
+    };
 
     try {
       if (successfulPayload.length) {
-        const response = await apiClient.post('/render-fit-figures', {
+        const response = await apiClient.post<RenderFitFiguresResponse>('/render-fit-figures', {
           run_id: runId,
           series: successfulPayload,
           figure_settings: buildFigureRenderSettings(),
         });
-        setFitFigureUrls({
+        nextFitFigureUrls = {
+          ...nextFitFigureUrls,
           overlay: response.data.overlay_url,
           normalized: response.data.normalized_url,
-        });
+        };
+        setFitFigureUrls(nextFitFigureUrls);
+        setFitFiguresStale(false);
         setFitSummaryMsg(
           failureCount === 0
             ? `Completed fits for ${successCount} file(s). Overlay and normalized comparison are shown on the right.`
             : `Completed fits for ${successCount} file(s); ${failureCount} file(s) need attention.`,
         );
       } else {
-        setFitFigureUrls({ overlay: '', normalized: '' });
+        setFitFigureUrls(nextFitFigureUrls);
+        setFitFiguresStale(false);
         setFitSummaryMsg('No successful fit image available.');
       }
     } catch (error) {
-      setFitFigureUrls({ overlay: '', normalized: '' });
+      setFitFigureUrls(nextFitFigureUrls);
+      setFitFiguresStale(false);
       setFitSummaryMsg(
         `Fits completed, but figure rendering failed: ${getErrorMessage(error, 'render failed')}`,
       );
     } finally {
-      await saveRunRecord();
+      await saveRunRecord({
+        fitFigureUrls: nextFitFigureUrls,
+        fitFiguresStale: false,
+        fitResults: nextResults,
+      });
       setRunFitsPending(false);
     }
   };
@@ -807,6 +996,7 @@ export function AppShell() {
     mode,
     runId,
     selectedFiles,
+    fitFiguresStale,
     waterfallColorScheme,
     waterfallGap,
     waterfallMaxLines,
@@ -902,7 +1092,7 @@ export function AppShell() {
           keepRecord={keepRecord}
           onKeepRecordChange={(value) => {
             setKeepRecord(value);
-            void saveRunRecord();
+            void saveRunRecord({ keepRecord: value });
           }}
           folderInput={folderInput}
           onFolderInputChange={setFolderInput}
@@ -943,8 +1133,12 @@ export function AppShell() {
             void handleFitRangeInputChange(filename, bound, value)
           }
           figureSettings={figureSettings}
-          onFigureColorSchemeChange={handleFigureColorSchemeChange}
-          onFigurePanelChange={handleFigurePanelChange}
+          onFigureColorSchemeChange={handleFitFigureColorSchemeChange}
+          onFigurePanelChange={handleFitFigurePanelChange}
+          onSpectralFigureChange={handleSpectralFigureInputChange}
+          onRenderSpectralFigure={() => void renderSpectralFigure()}
+          spectralFigurePending={spectralFigurePending}
+          spectralFigureStatus={spectralFigureStatus}
         />
       </div>
       <ResizeHandle
@@ -967,13 +1161,13 @@ export function AppShell() {
           onFitRangeChange={(filename, range) => void handleFitRangeChange(filename, range)}
           integrationRange={globalIntegrationRange}
           waterfallGap={waterfallGap}
-          onWaterfallGapChange={setWaterfallGap}
+          onWaterfallGapChange={handleWaterfallGapChange}
           waterfallMaxLines={waterfallMaxLines}
-          onWaterfallMaxLinesChange={setWaterfallMaxLines}
+          onWaterfallMaxLinesChange={handleWaterfallMaxLinesChange}
           waterfallTimeRangeInput={waterfallTimeRangeInput}
-          onWaterfallTimeRangeInputChange={setWaterfallTimeRangeInput}
+          onWaterfallTimeRangeInputChange={handleWaterfallTimeRangeInputChange}
           waterfallColorScheme={waterfallColorScheme}
-          onWaterfallColorSchemeChange={setWaterfallColorScheme}
+          onWaterfallColorSchemeChange={handleWaterfallColorSchemeChange}
           onVisibleTimeRangeChange={handleVisibleTimeRangeChange}
           onIntegrationRangeChange={handleIntegrationRangeChange}
         />
@@ -995,6 +1189,8 @@ export function AppShell() {
           getFileColor={getFileColor}
           onRunAllFits={() => void runAllFits()}
           runFitsPending={runFitsPending}
+          fitFiguresStale={fitFiguresStale}
+          spectralFigureStatus={spectralFigureStatus}
         />
       </div>
     </div>

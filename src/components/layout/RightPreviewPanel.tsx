@@ -9,12 +9,16 @@ interface RightPreviewPanelProps {
   fitFigureUrls: {
     overlay: string;
     normalized: string;
+    spectral: string;
+    spectralHeatmap: string;
   };
   fitResults: FitResultMap;
   extractedFilenames: string[];
   getFileColor: (filename: string) => string;
   onRunAllFits: () => void;
   runFitsPending: boolean;
+  fitFiguresStale: boolean;
+  spectralFigureStatus: string;
 }
 
 export function RightPreviewPanel({
@@ -28,6 +32,8 @@ export function RightPreviewPanel({
   getFileColor,
   onRunAllFits,
   runFitsPending,
+  fitFiguresStale,
+  spectralFigureStatus,
 }: RightPreviewPanelProps) {
   return (
     <aside className="relative flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-white/[0.04] bg-black/40 backdrop-blur-xl">
@@ -55,6 +61,11 @@ export function RightPreviewPanel({
           <span className="text-slate-400">{fitResultCount}</span>
         </div>
         <p className="mt-2 text-[11px] font-medium text-slate-500">{fitNormalizedMeta}</p>
+        {fitFiguresStale && (
+          <p className="mt-2 text-[11px] font-medium text-amber-300/80">
+            Current fit images are from the previous settings. Click Run All Fits to refresh them.
+          </p>
+        )}
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto p-6 scroll-smooth">
@@ -87,6 +98,43 @@ export function RightPreviewPanel({
             ) : (
               <div className="px-6 text-center text-xs font-medium text-slate-500">
                 Run fitting to generate result images.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Spectral Figure</h4>
+            <span className="text-[11px] font-medium text-slate-500">{spectralFigureStatus}</span>
+          </div>
+          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-black/35 shadow-inner">
+            {fitFigureUrls.spectral ? (
+              <img
+                src={fitFigureUrls.spectral}
+                alt="Waterfall spectral figure"
+                className="h-full w-full object-contain mix-blend-screen"
+              />
+            ) : (
+              <div className="px-6 text-center text-xs font-medium text-slate-500">
+                Render the spectral figure from Step 4 to preview it here.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h4 className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Spectral Heatmap</h4>
+          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-black/35 shadow-inner">
+            {fitFigureUrls.spectralHeatmap ? (
+              <img
+                src={fitFigureUrls.spectralHeatmap}
+                alt="Spectral heatmap figure"
+                className="h-full w-full object-contain mix-blend-screen"
+              />
+            ) : (
+              <div className="px-6 text-center text-xs font-medium text-slate-500">
+                Render the spectral figure from Step 4 to preview the heatmap here.
               </div>
             )}
           </div>

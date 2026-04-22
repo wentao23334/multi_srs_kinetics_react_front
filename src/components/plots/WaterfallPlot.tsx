@@ -3,11 +3,8 @@ import type { GetDatasetResponse } from '../../types/api';
 import type { NumericRange } from '../../types/workflow';
 import { usePlotly } from '../../hooks/usePlotly';
 import {
+  buildWaterfallTracePayload,
   formatRangeInput,
-  getSortedTimeAxis,
-  parseRangeInput,
-  sampleColors,
-  sampleIndices,
 } from '../../lib/workflowUtils';
 
 interface WaterfallPlotProps {
@@ -55,48 +52,27 @@ export function WaterfallPlot({
 
   useEffect(() => {
     if (!plotly || !plotRef.current || !dataset) return;
-
-    const totalFrames = dataset.spectra.length;
-    const order = Array.from({ length: totalFrames }, (_, i) => i).sort(
-      (a, b) => dataset.time[a] - dataset.time[b],
+    const { traces: waterfallTraces, visibleRange } = buildWaterfallTracePayload(
+      dataset,
+      gap,
+      maxLines,
+      timeRangeInput,
+      colorScheme,
     );
-
-    const axis = getSortedTimeAxis(dataset.time);
-    const parsedRange = parseRangeInput(timeRangeInput);
-    const resolvedRange = parsedRange ?? {
-      start: axis[0],
-      end: axis[axis.length - 1],
-    };
-    const filteredOrder = order.filter(
-      (idx) =>
-        dataset.time[idx] >= resolvedRange.start &&
-        dataset.time[idx] <= resolvedRange.end,
-    );
-    const safeOrder = filteredOrder.length ? filteredOrder : order;
-    const safeMaxLines = Math.max(1, Math.min(maxLines || 15, safeOrder.length));
-    const frameIdx = sampleIndices(safeOrder.length, safeMaxLines).map((k) => safeOrder[k]);
-
-    const visibleRange = {
-      start: Math.min(...frameIdx.map((idx) => dataset.time[idx])),
-      end: Math.max(...frameIdx.map((idx) => dataset.time[idx])),
-    };
     emitVisibleTimeRangeChange(dataset.filename, visibleRange);
-
-    const waterfallColors = sampleColors(colorScheme || 'None', Math.max(frameIdx.length, 1));
-    const traces = frameIdx.map((idx, stackIdx) => ({
-      x: dataset.wavenumbers,
-      y: dataset.spectra[idx].map((value) => value + stackIdx * gap),
-      mode: 'lines',
-      line: { width: 1.1, color: waterfallColors[stackIdx % waterfallColors.length] },
-      name: `t=${dataset.time[idx].toFixed(4)}`,
-    }));
 
     const [start, end] = integrationRange;
 
     plotly
       .react(
         plotRef.current,
-        traces,
+        waterfallTraces.map((trace) => ({
+          x: trace.x,
+          y: trace.y,
+          mode: 'lines',
+          line: { width: 1.1, color: trace.color },
+          name: trace.label,
+        })),
         {
           title: {
             text: `SRS Waterfall — ${dataset.filename} (Gap=${gap.toPrecision(4)}, Time=${formatRangeInput(visibleRange.start, visibleRange.end)})`,

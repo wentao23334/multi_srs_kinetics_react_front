@@ -18,10 +18,19 @@ export interface FigurePanelSettings {
   labelOffsetInput: string;
 }
 
+export interface SpectralFigureSettings {
+  title: string;
+  xlabel: string;
+  ylabel: string;
+  xRangeInput: string;
+  yRangeInput: string;
+}
+
 export interface FigureSettingsState {
   colorScheme: string;
   overlay: FigurePanelSettings;
   normalized: FigurePanelSettings;
+  spectral: SpectralFigureSettings;
 }
 
 export interface IntegrationCacheEntry extends IntegrateResponse {
@@ -80,6 +89,8 @@ export interface RunRecordSnapshot {
   artifacts: {
     overlay_image: string | null;
     normalized_image: string | null;
+    spectral_image: string | null;
+    spectral_heatmap_image: string | null;
   };
   fit_results: Record<string, unknown>;
 }

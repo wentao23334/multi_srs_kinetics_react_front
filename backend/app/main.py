@@ -55,12 +55,30 @@ def _get_matplotlib():
     return plt
 
 
+def _resolve_matplotlib_cmap_name(name: str | None) -> str:
+    plt = _get_matplotlib()
+    requested = str(name or "viridis").strip()
+    if not requested:
+        return "viridis"
+
+    available = list(plt.colormaps())
+    if requested in available:
+        return requested
+
+    lowered = requested.lower()
+    for candidate in available:
+        if candidate.lower() == lowered:
+            return candidate
+
+    return "viridis"
+
+
 def _style_axes(ax: Any, xlabel: str, ylabel: str) -> None:
     ax.set_xlabel(xlabel, fontsize=11, fontname="Arial")
     ax.set_ylabel(ylabel, fontsize=11, fontname="Arial")
     ax.tick_params(
         axis="both",
-        direction="in",
+        direction="out",
         labelsize=10,
         width=0.8,
         length=4,
@@ -189,6 +207,111 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
         ax.set_ylim(*ylim)
     if figure_settings.get("show_labels", True):
         _add_curve_labels(ax, "lower right", figure_settings.get("label_offset"))
+    fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
+    fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
+    plt.close(fig)
+
+
+def _save_spectral_figure(
+    target_path: Path,
+    traces: list[dict[str, Any]],
+    figure_settings: dict[str, Any] | None = None,
+) -> None:
+    plt = _get_matplotlib()
+    fig, ax = plt.subplots(figsize=(10 / 2.54, 8 / 2.54), dpi=300, facecolor="white")
+    figure_settings = figure_settings or {}
+
+    for item in traces:
+        ax.plot(
+            np.asarray(item["x"], dtype=float),
+            np.asarray(item["y"], dtype=float),
+            color=str(item["color"]),
+            linewidth=1.1,
+        )
+
+    _style_axes(
+        ax,
+        str(figure_settings.get("xlabel") or "Wavenumber (cm⁻¹)"),
+        str(figure_settings.get("ylabel") or "Intensity + Offset"),
+    )
+    title = str(figure_settings.get("title") or "").strip()
+    if title:
+        ax.set_title(title, fontsize=11, fontname="Arial", pad=8)
+    xlim = _coerce_axis_range(figure_settings.get("xlim"))
+    ylim = _coerce_axis_range(figure_settings.get("ylim"))
+    if xlim:
+        ax.set_xlim(*xlim)
+    if ylim:
+        ax.set_ylim(*ylim)
+    fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
+    fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
+    plt.close(fig)
+
+
+def _save_spectral_heatmap_figure(
+    target_path: Path,
+    heatmap: dict[str, Any],
+    figure_settings: dict[str, Any] | None = None,
+) -> None:
+    plt = _get_matplotlib()
+    fig, ax = plt.subplots(figsize=(10 / 2.54, 8 / 2.54), dpi=300, facecolor="white")
+    figure_settings = figure_settings or {}
+    z_values = np.asarray(heatmap["z"], dtype=float)
+    finite_values = z_values[np.isfinite(z_values)]
+    vmin = float(np.min(finite_values)) if finite_values.size else 0.0
+    vmax = float(np.max(finite_values)) if finite_values.size else 0.0
+
+    cmap_name = _resolve_matplotlib_cmap_name(str(heatmap.get("color_scale") or "viridis"))
+    image = ax.imshow(
+        z_values,
+        aspect="auto",
+        origin="lower",
+        extent=[
+            float(np.min(np.asarray(heatmap["x"], dtype=float))),
+            float(np.max(np.asarray(heatmap["x"], dtype=float))),
+            float(np.min(np.asarray(heatmap["y"], dtype=float))),
+            float(np.max(np.asarray(heatmap["y"], dtype=float))),
+        ],
+        cmap=cmap_name,
+    )
+
+    _style_axes(
+        ax,
+        str(figure_settings.get("xlabel") or "Wavenumber (cm⁻¹)"),
+        "Time / Potential",
+    )
+
+    xlim = _coerce_axis_range(figure_settings.get("xlim"))
+    if xlim:
+        ax.set_xlim(*xlim)
+
+    cax = ax.inset_axes([0.7, 1.02, 0.17, 0.035], transform=ax.transAxes)
+    cbar = fig.colorbar(image, cax=cax, orientation="horizontal")
+    cbar.outline.set_linewidth(0.6)
+    cbar.ax.set_xticks([])
+    cbar.ax.text(
+        -0.06,
+        0.5,
+        f"{vmin:.2g}",
+        transform=cbar.ax.transAxes,
+        ha="right",
+        va="center",
+        fontsize=10,
+        fontname="Arial",
+        color="black",
+    )
+    cbar.ax.text(
+        1.06,
+        0.5,
+        f"{vmax:.2g}",
+        transform=cbar.ax.transAxes,
+        ha="left",
+        va="center",
+        fontsize=10,
+        fontname="Arial",
+        color="black",
+    )
+
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
     fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
@@ -587,6 +710,42 @@ async def render_fit_figures(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@app.post("/api/render-spectral-figure")
+async def render_spectral_figure(payload: dict[str, Any]) -> dict[str, Any]:
+    run_id = str(payload.get("run_id", "")).strip()
+    filename = str(payload.get("filename", "")).strip()
+    traces = list(payload.get("traces", []))
+    heatmap = payload.get("heatmap", {})
+    figure_settings = payload.get("figure_settings", {})
+
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if not filename:
+        raise HTTPException(status_code=400, detail="filename is required")
+    if not traces:
+        raise HTTPException(status_code=400, detail="traces are required")
+    if not isinstance(heatmap, dict) or not heatmap:
+        raise HTTPException(status_code=400, detail="heatmap is required")
+
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail="run_id not found")
+
+    try:
+        spectral_path = run_dir / "spectral_waterfall.png"
+        spectral_heatmap_path = run_dir / "spectral_heatmap.png"
+        _save_spectral_figure(spectral_path, traces, figure_settings if isinstance(figure_settings, dict) else {})
+        _save_spectral_heatmap_figure(spectral_heatmap_path, heatmap, figure_settings if isinstance(figure_settings, dict) else {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to render spectral figure: {e}") from e
+
+    stamp = int(time.time() * 1000)
+    return {
+        "spectral_url": f"/api/fit-figure/{run_id}/spectral?ts={stamp}",
+        "spectral_heatmap_url": f"/api/fit-figure/{run_id}/spectral-heatmap?ts={stamp}",
+    }
+
+
 @app.get("/api/fit-figure/{run_id}/{kind}")
 async def get_fit_figure(run_id: str, kind: str) -> FileResponse:
     run_dir = RUNS_DIR / run_id
@@ -596,6 +755,8 @@ async def get_fit_figure(run_id: str, kind: str) -> FileResponse:
     name_map = {
         "overlay": "fit_overlay.png",
         "normalized": "fit_normalized.png",
+        "spectral": "spectral_waterfall.png",
+        "spectral-heatmap": "spectral_heatmap.png",
     }
     if kind not in name_map:
         raise HTTPException(status_code=404, detail="Unknown figure kind")

@@ -1,4 +1,5 @@
 import type { FigureSettingsState, FitOutcome, FitResult, NumericRange } from '../types/workflow';
+import type { GetDatasetResponse } from '../types/api';
 
 const colorScales: Record<string, string[]> = {
   None: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
@@ -32,7 +33,34 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
     showLabels: true,
     labelOffsetInput: '0,0',
   },
+  spectral: {
+    title: 'SRS Waterfall',
+    xlabel: 'Wavenumber (cm⁻¹)',
+    ylabel: 'Intensity + Offset',
+    xRangeInput: '',
+    yRangeInput: '',
+  },
 };
+
+export interface WaterfallTracePayload {
+  x: number[];
+  y: number[];
+  color: string;
+  label: string;
+}
+
+export interface WaterfallTraceResult {
+  traces: WaterfallTracePayload[];
+  visibleRange: NumericRange;
+}
+
+export interface HeatmapPayload {
+  x: number[];
+  y: number[];
+  z: number[][];
+  colorScale: string;
+  visibleRange: NumericRange;
+}
 
 export function sampleIndices(total: number, maxN: number) {
   if (total <= maxN) return Array.from({ length: total }, (_, i) => i);
@@ -144,6 +172,97 @@ export function sampleColors(scaleName: string, count: number) {
 
 export function getSortedTimeAxis(time: number[]) {
   return Array.from(new Set(time.slice().sort((a, b) => a - b)));
+}
+
+export function buildWaterfallTracePayload(
+  dataset: GetDatasetResponse,
+  gap: number,
+  maxLines: number,
+  timeRangeInput: string,
+  colorScheme: string,
+): WaterfallTraceResult {
+  const totalFrames = dataset.spectra.length;
+  const order = Array.from({ length: totalFrames }, (_, i) => i).sort(
+    (a, b) => dataset.time[a] - dataset.time[b],
+  );
+
+  const axis = getSortedTimeAxis(dataset.time);
+  const parsedRange = parseRangeInput(timeRangeInput);
+  const resolvedRange = parsedRange ?? {
+    start: axis[0],
+    end: axis[axis.length - 1],
+  };
+
+  const filteredOrder = order.filter(
+    (idx) => dataset.time[idx] >= resolvedRange.start && dataset.time[idx] <= resolvedRange.end,
+  );
+  const safeOrder = filteredOrder.length ? filteredOrder : order;
+  const safeMaxLines = Math.max(1, Math.min(maxLines || 15, safeOrder.length));
+  const frameIdx = sampleIndices(safeOrder.length, safeMaxLines).map((k) => safeOrder[k]);
+
+  const visibleRange = {
+    start: Math.min(...frameIdx.map((idx) => dataset.time[idx])),
+    end: Math.max(...frameIdx.map((idx) => dataset.time[idx])),
+  };
+
+  const waterfallColors = sampleColors(colorScheme || 'None', Math.max(frameIdx.length, 1));
+  const traces = frameIdx.map((idx, stackIdx) => ({
+    x: dataset.wavenumbers,
+    y: dataset.spectra[idx].map((value) => value + stackIdx * gap),
+    color: waterfallColors[stackIdx % waterfallColors.length],
+    label: `t=${dataset.time[idx].toFixed(4)}`,
+  }));
+
+  return { traces, visibleRange };
+}
+
+export function resolveHeatmapColorScale(scaleName: string) {
+  const map: Record<string, string> = {
+    None: 'Viridis',
+    viridis: 'Viridis',
+    magma: 'Magma',
+    plasma: 'Plasma',
+    inferno: 'Inferno',
+    cividis: 'Cividis',
+    Greys: 'Greys',
+    RdBu: 'RdBu',
+    RdBu_r: 'RdBu_r',
+    Spectral: 'Spectral',
+    coolwarm: 'RdBu',
+  };
+  return map[scaleName] ?? 'Viridis';
+}
+
+export function buildHeatmapPayload(
+  dataset: GetDatasetResponse,
+  timeRangeInput: string,
+  colorScheme: string,
+): HeatmapPayload {
+  const parsedRange = parseRangeInput(timeRangeInput);
+  const filteredIndices = dataset.time
+    .map((timeValue, idx) => ({ timeValue, idx }))
+    .filter(({ timeValue }) =>
+      !parsedRange || (timeValue >= parsedRange.start && timeValue <= parsedRange.end),
+    )
+    .sort((a, b) => a.timeValue - b.timeValue);
+
+  const effectiveIndices = filteredIndices.length
+    ? filteredIndices
+    : dataset.time.map((timeValue, idx) => ({ timeValue, idx })).sort((a, b) => a.timeValue - b.timeValue);
+
+  const y = effectiveIndices.map(({ timeValue }) => timeValue);
+  const z = effectiveIndices.map(({ idx }) => dataset.spectra[idx]);
+
+  return {
+    x: dataset.wavenumbers,
+    y,
+    z,
+    colorScale: resolveHeatmapColorScale(colorScheme),
+    visibleRange: {
+      start: Math.min(...y),
+      end: Math.max(...y),
+    },
+  };
 }
 
 export function normalizeSeriesPair(yRaw: number[], yFit: number[]) {

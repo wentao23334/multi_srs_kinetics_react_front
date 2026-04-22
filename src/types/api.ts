@@ -85,3 +85,26 @@ export interface RenderFitFiguresResponse {
   overlay_url: string;
   normalized_url: string;
 }
+
+export interface RenderSpectralFigureRequest {
+  run_id: string;
+  filename: string;
+  traces: Array<{
+    x: number[];
+    y: number[];
+    color: string;
+    label: string;
+  }>;
+  figure_settings: {
+    title: string;
+    xlabel: string;
+    ylabel: string;
+    xlim: [number, number] | null;
+    ylim: [number, number] | null;
+  };
+}
+
+export interface RenderSpectralFigureResponse {
+  spectral_url: string;
+  spectral_heatmap_url: string;
+}
