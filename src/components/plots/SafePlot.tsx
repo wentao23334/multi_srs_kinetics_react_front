@@ -1,14 +1,15 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import type { PlotParams } from 'react-plotly.js';
 
-type PlotComponent = ComponentType<any>;
+type PlotComponent = ComponentType<PlotParams>;
+type PlotFactory = (plotly: unknown) => PlotComponent;
 interface LoadedPlot {
   Component: PlotComponent;
 }
 
-interface SafePlotProps {
-  fallback?: React.ReactNode;
-  errorFallback?: (message: string) => React.ReactNode;
-  [key: string]: unknown;
+interface SafePlotProps extends Partial<PlotParams> {
+  fallback?: ReactNode;
+  errorFallback?: (message: string) => ReactNode;
 }
 
 export function SafePlot({
@@ -33,9 +34,18 @@ export function SafePlot({
         if (cancelled) return;
 
         const plotly = (PlotlyModule as { default?: unknown }).default ?? PlotlyModule;
-        const createPlotlyComponent = createPlotlyModule.default || createPlotlyModule;
+        const plotFactoryModule = createPlotlyModule as unknown as
+          | PlotFactory
+          | { default?: PlotFactory };
+        const createPlotlyComponent =
+          typeof plotFactoryModule === 'function'
+            ? plotFactoryModule
+            : plotFactoryModule.default;
+        if (!createPlotlyComponent) {
+          throw new Error('Failed to initialize Plotly component factory');
+        }
         setLoadedPlot({
-          Component: createPlotlyComponent(plotly) as PlotComponent,
+          Component: createPlotlyComponent(plotly),
         });
       } catch (error) {
         if (cancelled) return;
@@ -61,5 +71,5 @@ export function SafePlot({
     return <>{fallback ?? null}</>;
   }
 
-  return <loadedPlot.Component {...plotProps} />;
+  return <loadedPlot.Component {...(plotProps as PlotParams)} />;
 }

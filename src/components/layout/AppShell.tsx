@@ -1,17 +1,17 @@
 import axios from 'axios';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '../../lib/apiClient';
 import {
-  buildHeatmapPayload,
   buildWaterfallTracePayload,
+  buildSuccessfulSeriesPayload,
   formatRangeInput,
   getSnappedRange,
   isFitError,
   normalizeSeriesPair,
+  resolveHeatmapColorScale,
   sampleColors,
   summarizeFitResults,
-  buildSuccessfulSeriesPayload,
 } from '../../lib/workflowUtils';
 import { useFigureSettings } from '../../hooks/useFigureSettings';
 import { useRunRecord } from '../../hooks/useRunRecord';
@@ -26,10 +26,12 @@ import type {
   DatasetCache,
   FitRangeMap,
   FitResultMap,
+  GlobalImageSettings,
   IntegrationCache,
   IntegrationCacheEntry,
   NumericRange,
   RunRecordSnapshot,
+  SpectralFigureSettings,
   WaterfallRangeMap,
 } from '../../types/workflow';
 import { LeftControlPanel } from './LeftControlPanel';
@@ -44,6 +46,37 @@ const LEFT_PANEL_MAX = 460;
 const RIGHT_PANEL_MIN = 288;
 const RIGHT_PANEL_MAX = 420;
 const RESIZE_HANDLE_WIDTH = 12;
+const DATASET_CACHE_LIMIT = 2;
+const INTEGRATION_CACHE_LIMIT = 3;
+
+function upsertLimitedCache<T>(prev: Record<string, T>, key: string, value: T, limit: number) {
+  const next = { ...prev };
+  delete next[key];
+  next[key] = value;
+  const keys = Object.keys(next);
+  while (keys.length > limit) {
+    const oldestKey = keys.shift();
+    if (!oldestKey) break;
+    delete next[oldestKey];
+  }
+  return next;
+}
+
+function resolveOptionalCropRange(
+  cropStartInput: string,
+  cropEndInput: string,
+  fallbackStart: number,
+  fallbackEnd: number,
+): [number, number] | null {
+  const startRaw = cropStartInput.trim();
+  const endRaw = cropEndInput.trim();
+  if (!startRaw && !endRaw) return null;
+
+  const start = startRaw ? Number(startRaw) : fallbackStart;
+  const end = endRaw ? Number(endRaw) : fallbackEnd;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return start <= end ? [start, end] : [end, start];
+}
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (axios.isAxiosError(error)) {
@@ -163,8 +196,8 @@ function ResizeHandle({
 export function AppShell() {
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const { queueSave } = useRunRecord();
-  const integrationDebounceRef = useRef<number | null>(null);
   const unloadActionRef = useRef<string>('');
+  const isEditingWaterfallTimeRangeRef = useRef(false);
   const dragRef = useRef<{
     side: ResizeSide;
     startX: number;
@@ -187,6 +220,8 @@ export function AppShell() {
   const [mode, setMode] = useState<'fast' | 'realtime'>('realtime');
   const [defaultStartWn, setDefaultStartWn] = useState(1150);
   const [defaultEndWn, setDefaultEndWn] = useState(4000);
+  const [cropStartWnInput, setCropStartWnInput] = useState('');
+  const [cropEndWnInput, setCropEndWnInput] = useState('');
 
   const [runId, setRunId] = useState('');
   const [extractedFilenames, setExtractedFilenames] = useState<string[]>([]);
@@ -199,11 +234,12 @@ export function AppShell() {
   const [waterfallTimeRanges, setWaterfallTimeRanges] = useState<WaterfallRangeMap>({});
 
   const [globalIntegrationRange, setGlobalIntegrationRange] = useState<[number, number]>([1150, 4000]);
-  const [baselineMode, setBaselineMode] = useState<'none' | 'linear'>('none');
+  const [baselineMode, setBaselineMode] = useState<'none' | 'linear'>('linear');
   const [waterfallGap, setWaterfallGap] = useState(0);
   const [waterfallMaxLines, setWaterfallMaxLines] = useState(15);
   const [waterfallTimeRangeInput, setWaterfallTimeRangeInput] = useState('');
-  const [waterfallColorScheme, setWaterfallColorScheme] = useState('None');
+  const [waterfallAppliedTimeRangeInput, setWaterfallAppliedTimeRangeInput] = useState('');
+  const [waterfallColorScheme, setWaterfallColorScheme] = useState('RdBu_r');
 
   const [fitResults, setFitResults] = useState<FitResultMap>({});
   const [fitFigureUrls, setFitFigureUrls] = useState<FitFigureUrlsState>({
@@ -263,10 +299,16 @@ export function AppShell() {
   const currentIntegrationData =
     (activeKineticsFile && integrationCache[activeKineticsFile]) || null;
 
+  const analysisCropRange = useMemo(
+    () => resolveOptionalCropRange(cropStartWnInput, cropEndWnInput, defaultStartWn, defaultEndWn),
+    [cropEndWnInput, cropStartWnInput, defaultEndWn, defaultStartWn],
+  );
+
 
   const {
     figureSettings,
     buildFigureRenderSettings,
+    handleGlobalImageSettingChange,
     handleFigurePanelChange,
     handleFigureColorSchemeChange,
     handleSpectralFigureChange,
@@ -283,7 +325,9 @@ export function AppShell() {
     return palette[idx % palette.length];
   };
 
-  const buildRunRecordSnapshot = (
+  const currentDatasetFilename = currentDataset?.filename || null;
+
+  const buildRunRecordSnapshot = useCallback((
     overrides: RunRecordSnapshotOverrides = {},
   ): RunRecordSnapshot => {
     const snapshotFitFigureUrls = overrides.fitFigureUrls ?? fitFigureUrls;
@@ -302,6 +346,8 @@ export function AppShell() {
           mode,
           start_wn: defaultStartWn,
           end_wn: defaultEndWn,
+          crop_start_wn: analysisCropRange ? analysisCropRange[0] : null,
+          crop_end_wn: analysisCropRange ? analysisCropRange[1] : null,
         },
         integration: {
           start_wn: globalIntegrationRange[0],
@@ -321,7 +367,7 @@ export function AppShell() {
         fit_ranges: fitRanges,
       },
       active_views: {
-        spectra_filename: currentDataset?.filename || null,
+        spectra_filename: currentDatasetFilename,
         kinetics_filename: activeKineticsFile,
       },
       artifacts: {
@@ -338,7 +384,30 @@ export function AppShell() {
       },
       fit_results: summarizeFitResults(snapshotFitResults, extractedFilenames),
     };
-  };
+  }, [
+    activeKineticsFile,
+    activeWaterfallFile,
+    analysisCropRange,
+    baselineMode,
+    currentDatasetFilename,
+    currentFolderPath,
+    defaultEndWn,
+    defaultStartWn,
+    extractedFilenames,
+    figureSettings,
+    fitFigureUrls,
+    fitFiguresStale,
+    fitRanges,
+    fitResults,
+    globalIntegrationRange,
+    keepRecord,
+    mode,
+    selectedFiles,
+    waterfallColorScheme,
+    waterfallGap,
+    waterfallMaxLines,
+    waterfallTimeRanges,
+  ]);
 
   const saveRunRecord = (overrides: RunRecordSnapshotOverrides = {}) => {
     const snapshotKeepRecord = overrides.keepRecord ?? keepRecord;
@@ -390,12 +459,13 @@ export function AppShell() {
     if (!targetRunId) throw new Error('run_id is missing');
     if (datasetCache[filename]) return datasetCache[filename];
 
-    const response = await apiClient.post<GetDatasetResponse>('/get_dataset', {
-      run_id: targetRunId,
-      filename,
-    });
+      const response = await apiClient.post<GetDatasetResponse>('/get_dataset', {
+        run_id: targetRunId,
+        filename,
+        crop_range: analysisCropRange,
+      });
     const body = response.data;
-    setDatasetCache((prev) => ({ ...prev, [filename]: body }));
+    setDatasetCache((prev) => upsertLimitedCache(prev, filename, body, DATASET_CACHE_LIMIT));
     return body;
   };
 
@@ -413,9 +483,10 @@ export function AppShell() {
       start: globalIntegrationRange[0],
       end: globalIntegrationRange[1],
       baseline_mode: baselineMode,
+      crop_range: analysisCropRange,
     });
     const entry: IntegrationCacheEntry = { ...response.data, filename };
-    setIntegrationCache((prev) => ({ ...prev, [filename]: entry }));
+    setIntegrationCache((prev) => upsertLimitedCache(prev, filename, entry, INTEGRATION_CACHE_LIMIT));
 
     const axis = Array.from(new Set(entry.time.slice().sort((a, b) => a - b)));
     setFitRanges((prev) => {
@@ -544,8 +615,9 @@ export function AppShell() {
       setActiveKineticsFile(body.succeeded[0] ?? null);
       setCurrentStep(body.succeeded.length ? 2 : 1);
       setGlobalIntegrationRange([defaultStartWn, defaultEndWn]);
-      setBaselineMode('none');
+      setBaselineMode('linear');
       setWaterfallTimeRangeInput('');
+      setWaterfallAppliedTimeRangeInput('');
 
       if (body.failed && Object.keys(body.failed).length > 0) {
         toast.warning(`Some files failed: ${Object.keys(body.failed).length}`);
@@ -568,9 +640,15 @@ export function AppShell() {
         selected_files: [...selectedFiles],
         extracted_files: [...body.succeeded],
         settings: {
-          extraction: { mode, start_wn: defaultStartWn, end_wn: defaultEndWn },
-          integration: { start_wn: defaultStartWn, end_wn: defaultEndWn, baseline_mode: 'none' },
-          waterfall: { gap: 0, max_lines: waterfallMaxLines, time_range: null, color_scheme: 'None' },
+          extraction: {
+            mode,
+            start_wn: defaultStartWn,
+            end_wn: defaultEndWn,
+            crop_start_wn: analysisCropRange ? analysisCropRange[0] : null,
+            crop_end_wn: analysisCropRange ? analysisCropRange[1] : null,
+          },
+          integration: { start_wn: defaultStartWn, end_wn: defaultEndWn, baseline_mode: 'linear' },
+          waterfall: { gap: 0, max_lines: waterfallMaxLines, time_range: null, color_scheme: 'RdBu_r' },
           figure_render: figureSettings,
           fit_ranges: {},
         },
@@ -604,7 +682,9 @@ export function AppShell() {
     });
     if (activeWaterfallFile === filename) {
       const text = formatRangeInput(range.start, range.end);
-      setWaterfallTimeRangeInput((prev) => (prev === text ? prev : text));
+      if (!isEditingWaterfallTimeRangeRef.current) {
+        setWaterfallTimeRangeInput((prev) => (prev === text ? prev : text));
+      }
       if (rangeChanged) {
         markSpectralFigureStale();
       }
@@ -613,42 +693,26 @@ export function AppShell() {
 
   const handleIntegrationRangeChange = (range: [number, number], shouldDebounce: boolean) => {
     setGlobalIntegrationRange(range);
+    void shouldDebounce;
+  };
+
+  const handleCropInputChange = (bound: 'start' | 'end', value: string) => {
+    if (bound === 'start') {
+      setCropStartWnInput(value);
+    } else {
+      setCropEndWnInput(value);
+    }
+
+    setDatasetCache({});
     setIntegrationCache({});
     setFitRanges({});
-    markFitsStale(
-      'Integration settings changed. Run fitting again to refresh the right-hand results.',
-    );
-
-    if (integrationDebounceRef.current) {
-      window.clearTimeout(integrationDebounceRef.current);
-      integrationDebounceRef.current = null;
-    }
-
-    const targetFile = activeKineticsFile || activeWaterfallFile;
-    if (!targetFile) return;
-
-    const trigger = () => {
-      void selectKineticsFile(targetFile, true);
-    };
-
-    if (shouldDebounce) {
-      integrationDebounceRef.current = window.setTimeout(trigger, 450);
-    } else {
-      trigger();
-    }
+    setCurrentDataset(null);
+    markFitsStale('Crop range changed. Run fitting again after re-integrating to refresh the right-hand results.');
+    markSpectralFigureStale('Crop range changed. Render Spectral Figure again after reloading the dataset.');
   };
 
   const handleBaselineModeChange = (value: 'none' | 'linear') => {
     setBaselineMode(value);
-    setIntegrationCache({});
-    setFitRanges({});
-    markFitsStale(
-      'Integration settings changed. Run fitting again to refresh the right-hand results.',
-    );
-    const targetFile = activeKineticsFile || activeWaterfallFile;
-    if (targetFile) {
-      void selectKineticsFile(targetFile, true);
-    }
   };
 
   const handleIntegrate = async () => {
@@ -710,6 +774,15 @@ export function AppShell() {
 
   const handleWaterfallTimeRangeInputChange = (value: string) => {
     setWaterfallTimeRangeInput(value);
+  };
+
+  const handleWaterfallTimeRangeInputFocus = () => {
+    isEditingWaterfallTimeRangeRef.current = true;
+  };
+
+  const handleWaterfallTimeRangeInputCommit = () => {
+    isEditingWaterfallTimeRangeRef.current = false;
+    setWaterfallAppliedTimeRangeInput(waterfallTimeRangeInput);
     markSpectralFigureStale();
   };
 
@@ -719,7 +792,7 @@ export function AppShell() {
   };
 
   const handleSpectralFigureInputChange = (
-    key: 'title' | 'xlabel' | 'ylabel' | 'xRangeInput' | 'yRangeInput',
+    key: keyof SpectralFigureSettings,
     value: string,
   ) => {
     handleSpectralFigureChange(key, value);
@@ -740,6 +813,15 @@ export function AppShell() {
     markFitsStale('Fit figure settings changed. Click Run All Fits to refresh the right-hand images.');
   };
 
+  const handleGlobalImageParameterChange = (
+    key: keyof GlobalImageSettings,
+    value: number | boolean,
+  ) => {
+    handleGlobalImageSettingChange(key, value);
+    markFitsStale('Image parameters changed. Click Run All Fits to refresh the right-hand images.');
+    markSpectralFigureStale('Image parameters changed. Render Spectral Figure again to refresh the image.');
+  };
+
   const renderSpectralFigure = async () => {
     const filename = activeWaterfallFile;
     if (!runId || !filename) {
@@ -758,27 +840,27 @@ export function AppShell() {
         dataset,
         waterfallGap,
         waterfallMaxLines,
-        waterfallTimeRangeInput,
+        waterfallAppliedTimeRangeInput,
         waterfallColorScheme,
       );
-      const settings = buildFigureRenderSettings().spectral;
-      const heatmap = buildHeatmapPayload(
-        dataset,
-        waterfallTimeRangeInput,
-        waterfallColorScheme,
-      );
+      const renderSettings = buildFigureRenderSettings();
+      const settings = renderSettings.spectral;
       const response = await apiClient.post<RenderSpectralFigureResponse>('/render-spectral-figure', {
         run_id: runId,
         filename,
+        crop_range: analysisCropRange,
         traces,
         heatmap: {
-          x: heatmap.x,
-          y: heatmap.y,
-          z: heatmap.z,
-          color_scale: heatmap.colorScale,
+          color_scale: resolveHeatmapColorScale(waterfallColorScheme),
+          time_range: [visibleRange.start, visibleRange.end],
+          crop_range: analysisCropRange,
+          zmin: settings.zlim ? settings.zlim[0] : null,
+          zmax: settings.zlim ? settings.zlim[1] : null,
         },
         figure_settings: {
           ...settings,
+          global: renderSettings.global,
+          reverse_wavenumber_axis: figureSettings.global.reverseWavenumberAxis,
           title: settings.title || `SRS Waterfall — ${filename}`,
         },
       });
@@ -807,6 +889,16 @@ export function AppShell() {
     setFitSummaryMsg(`Running fits for ${extractedFilenames.length} file(s)…`);
 
     const nextResults: FitResultMap = {};
+    const successfulSeriesInput: Array<{
+      filename: string;
+      full_time: number[];
+      full_areas: number[];
+      x_fit: number[];
+      y_fit: number[];
+      x_raw: number[];
+      y_raw: number[];
+      y_fit_norm: number[];
+    }> = [];
     let successCount = 0;
     let failureCount = 0;
 
@@ -839,20 +931,26 @@ export function AppShell() {
           x: xSelected,
           y: ySelected,
         });
-        const normalized = normalizeSeriesPair(ySelected, fitResponse.data.y_fit);
+        const normalized = normalizeSeriesPair(ySelected, fitResponse.data.y_fit, fitResponse.data.params);
         nextResults[filename] = {
-          ...fitResponse.data,
           filename,
           fit_range: [fitRange.start, fitRange.end],
           points_used: xSelected.length,
-          x_selected: xSelected,
-          y_selected: ySelected,
-          y_selected_norm: normalized.raw,
-          y_fit_norm: normalized.fit,
-          full_time: integrationBody.time,
-          full_areas: integrationBody.areas,
+          params: fitResponse.data.params,
+          metrics: fitResponse.data.metrics,
+          ci95: fitResponse.data.ci95,
           integration_window: integrationBody.window,
         };
+        successfulSeriesInput.push({
+          filename,
+          full_time: integrationBody.time,
+          full_areas: integrationBody.areas,
+          x_fit: fitResponse.data.x_sorted,
+          y_fit: fitResponse.data.y_fit,
+          x_raw: xSelected,
+          y_raw: normalized.raw,
+          y_fit_norm: normalized.fit,
+        });
         successCount += 1;
       } catch (error) {
         nextResults[filename] = {
@@ -864,11 +962,7 @@ export function AppShell() {
 
     setFitResults(nextResults);
 
-    const successfulPayload = buildSuccessfulSeriesPayload(
-      extractedFilenames,
-      nextResults,
-      getFileColor,
-    );
+    const successfulPayload = buildSuccessfulSeriesPayload(successfulSeriesInput, getFileColor);
     let nextFitFigureUrls: FitFigureUrlsState = {
       ...fitFigureUrls,
       overlay: '',
@@ -918,13 +1012,21 @@ export function AppShell() {
   useEffect(() => {
     if (!activeWaterfallFile) {
       setWaterfallTimeRangeInput('');
+      setWaterfallAppliedTimeRangeInput('');
       return;
     }
     const stored = waterfallTimeRanges[activeWaterfallFile];
     if (stored) {
-      setWaterfallTimeRangeInput(formatRangeInput(stored.start, stored.end));
+      const text = formatRangeInput(stored.start, stored.end);
+      if (!isEditingWaterfallTimeRangeRef.current) {
+        setWaterfallTimeRangeInput(text);
+      }
+      setWaterfallAppliedTimeRangeInput(text);
     } else {
-      setWaterfallTimeRangeInput('');
+      if (!isEditingWaterfallTimeRangeRef.current) {
+        setWaterfallTimeRangeInput('');
+      }
+      setWaterfallAppliedTimeRangeInput('');
     }
   }, [activeWaterfallFile, waterfallTimeRanges]);
 
@@ -966,19 +1068,11 @@ export function AppShell() {
       flushRunState();
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushRunState();
-      }
-    };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener('pagehide', handlePageHide);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', handlePageHide);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [
     activeKineticsFile,
@@ -1000,8 +1094,10 @@ export function AppShell() {
     waterfallColorScheme,
     waterfallGap,
     waterfallMaxLines,
+    waterfallAppliedTimeRangeInput,
     waterfallTimeRanges,
     baselineMode,
+    buildRunRecordSnapshot,
   ]);
 
   useEffect(() => {
@@ -1022,14 +1118,6 @@ export function AppShell() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(paneWidths));
   }, [paneWidths]);
-
-  useEffect(() => {
-    return () => {
-      if (integrationDebounceRef.current) {
-        window.clearTimeout(integrationDebounceRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -1118,6 +1206,10 @@ export function AppShell() {
           onDefaultStartWnChange={setDefaultStartWn}
           defaultEndWn={defaultEndWn}
           onDefaultEndWnChange={setDefaultEndWn}
+          cropStartWnInput={cropStartWnInput}
+          onCropStartWnInputChange={(value) => handleCropInputChange('start', value)}
+          cropEndWnInput={cropEndWnInput}
+          onCropEndWnInputChange={(value) => handleCropInputChange('end', value)}
           extractPending={extractPending}
           onExtractAll={handleExtractAll}
           integrationRange={globalIntegrationRange}
@@ -1135,6 +1227,7 @@ export function AppShell() {
           figureSettings={figureSettings}
           onFigureColorSchemeChange={handleFitFigureColorSchemeChange}
           onFigurePanelChange={handleFitFigurePanelChange}
+          onGlobalImageSettingChange={handleGlobalImageParameterChange}
           onSpectralFigureChange={handleSpectralFigureInputChange}
           onRenderSpectralFigure={() => void renderSpectralFigure()}
           spectralFigurePending={spectralFigurePending}
@@ -1165,7 +1258,10 @@ export function AppShell() {
           waterfallMaxLines={waterfallMaxLines}
           onWaterfallMaxLinesChange={handleWaterfallMaxLinesChange}
           waterfallTimeRangeInput={waterfallTimeRangeInput}
+          waterfallAppliedTimeRangeInput={waterfallAppliedTimeRangeInput}
           onWaterfallTimeRangeInputChange={handleWaterfallTimeRangeInputChange}
+          onWaterfallTimeRangeInputFocus={handleWaterfallTimeRangeInputFocus}
+          onWaterfallTimeRangeInputCommit={handleWaterfallTimeRangeInputCommit}
           waterfallColorScheme={waterfallColorScheme}
           onWaterfallColorSchemeChange={handleWaterfallColorSchemeChange}
           onVisibleTimeRangeChange={handleVisibleTimeRangeChange}

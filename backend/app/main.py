@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import math
 import secrets
@@ -93,6 +95,39 @@ def _style_axes(ax: Any, xlabel: str, ylabel: str) -> None:
     ax.grid(False)
 
 
+def _resolve_export_settings(figure_settings: dict[str, Any] | None) -> tuple[float, float, int]:
+    figure_settings = figure_settings or {}
+    global_settings = figure_settings.get("global", {}) if isinstance(figure_settings, dict) else {}
+
+    try:
+        width_cm = float(global_settings.get("width_cm", 10))
+    except Exception:
+        width_cm = 10.0
+    try:
+        height_cm = float(global_settings.get("height_cm", 8))
+    except Exception:
+        height_cm = 8.0
+    try:
+        dpi = int(global_settings.get("dpi", 300))
+    except Exception:
+        dpi = 300
+
+    width_cm = width_cm if math.isfinite(width_cm) and width_cm > 0 else 10.0
+    height_cm = height_cm if math.isfinite(height_cm) and height_cm > 0 else 8.0
+    dpi = dpi if dpi > 0 else 300
+    return width_cm, height_cm, dpi
+
+
+def _should_reverse_wavenumber_axis(figure_settings: dict[str, Any] | None) -> bool:
+    figure_settings = figure_settings or {}
+    if not isinstance(figure_settings, dict):
+        return False
+    if isinstance(figure_settings.get("reverse_wavenumber_axis"), bool):
+        return bool(figure_settings.get("reverse_wavenumber_axis"))
+    global_settings = figure_settings.get("global", {}) if isinstance(figure_settings, dict) else {}
+    return bool(global_settings.get("reverse_wavenumber_axis", False))
+
+
 def _coerce_axis_range(values: Any) -> tuple[float, float] | None:
     if not isinstance(values, (list, tuple)) or len(values) != 2:
         return None
@@ -104,6 +139,14 @@ def _coerce_axis_range(values: Any) -> tuple[float, float] | None:
     if not (math.isfinite(lo) and math.isfinite(hi)):
         return None
     return (lo, hi) if lo <= hi else (hi, lo)
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _coerce_label_offset(values: Any) -> tuple[float, float]:
@@ -140,8 +183,9 @@ def _add_curve_labels(ax: Any, default_loc: str, offset_values: Any) -> None:
 
 def _save_fit_overlay_figure(target_path: Path, series: list[dict[str, Any]], figure_settings: dict[str, Any] | None = None) -> None:
     plt = _get_matplotlib()
-    fig, ax = plt.subplots(figsize=(10 / 2.54, 8 / 2.54), dpi=300, facecolor="white")
     figure_settings = figure_settings or {}
+    width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in series:
         color = str(item["color"])
@@ -167,14 +211,15 @@ def _save_fit_overlay_figure(target_path: Path, series: list[dict[str, Any]], fi
     if figure_settings.get("show_labels", True):
         _add_curve_labels(ax, "upper right", figure_settings.get("label_offset"))
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
-    fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
+    fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
 
 
 def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]], figure_settings: dict[str, Any] | None = None) -> None:
     plt = _get_matplotlib()
-    fig, ax = plt.subplots(figsize=(10 / 2.54, 8 / 2.54), dpi=300, facecolor="white")
     figure_settings = figure_settings or {}
+    width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in series:
         color = str(item["color"])
@@ -183,6 +228,10 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
         y_raw = np.asarray(item["y_raw"], dtype=float)
         x_fit = np.asarray(item["x_fit"], dtype=float)
         y_fit = np.asarray(item["y_fit"], dtype=float)
+        if x_raw.size:
+            x_origin = float(x_raw[0])
+            x_raw = x_raw - x_origin
+            x_fit = x_fit - x_origin
         ax.scatter(
             x_raw,
             y_raw,
@@ -208,7 +257,7 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
     if figure_settings.get("show_labels", True):
         _add_curve_labels(ax, "lower right", figure_settings.get("label_offset"))
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
-    fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
+    fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
 
 
@@ -218,8 +267,9 @@ def _save_spectral_figure(
     figure_settings: dict[str, Any] | None = None,
 ) -> None:
     plt = _get_matplotlib()
-    fig, ax = plt.subplots(figsize=(10 / 2.54, 8 / 2.54), dpi=300, facecolor="white")
     figure_settings = figure_settings or {}
+    width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in traces:
         ax.plot(
@@ -231,8 +281,8 @@ def _save_spectral_figure(
 
     _style_axes(
         ax,
-        str(figure_settings.get("xlabel") or "Wavenumber (cm⁻¹)"),
-        str(figure_settings.get("ylabel") or "Intensity + Offset"),
+        str(figure_settings.get("xlabel") or r"Wavenumber (cm$^{-1}$)"),
+        str(figure_settings.get("ylabel") or "Absorbance (a.u.)"),
     )
     title = str(figure_settings.get("title") or "").strip()
     if title:
@@ -243,8 +293,10 @@ def _save_spectral_figure(
         ax.set_xlim(*xlim)
     if ylim:
         ax.set_ylim(*ylim)
+    if _should_reverse_wavenumber_axis(figure_settings):
+        ax.invert_xaxis()
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
-    fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
+    fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
 
 
@@ -254,12 +306,25 @@ def _save_spectral_heatmap_figure(
     figure_settings: dict[str, Any] | None = None,
 ) -> None:
     plt = _get_matplotlib()
-    fig, ax = plt.subplots(figsize=(10 / 2.54, 8 / 2.54), dpi=300, facecolor="white")
     figure_settings = figure_settings or {}
+    width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
     z_values = np.asarray(heatmap["z"], dtype=float)
     finite_values = z_values[np.isfinite(z_values)]
-    vmin = float(np.min(finite_values)) if finite_values.size else 0.0
-    vmax = float(np.max(finite_values)) if finite_values.size else 0.0
+    auto_vmin = float(np.min(finite_values)) if finite_values.size else 0.0
+    auto_vmax = float(np.max(finite_values)) if finite_values.size else 0.0
+    manual_vmin = _coerce_float(heatmap.get("zmin"))
+    manual_vmax = _coerce_float(heatmap.get("zmax"))
+
+    if manual_vmin is not None and manual_vmax is not None:
+        vmin, vmax = (manual_vmin, manual_vmax) if manual_vmin <= manual_vmax else (manual_vmax, manual_vmin)
+    else:
+        vmin = auto_vmin
+        vmax = auto_vmax
+        if manual_vmin is not None and manual_vmin <= auto_vmax:
+            vmin = manual_vmin
+        if manual_vmax is not None and manual_vmax >= vmin:
+            vmax = manual_vmax
 
     cmap_name = _resolve_matplotlib_cmap_name(str(heatmap.get("color_scale") or "viridis"))
     image = ax.imshow(
@@ -273,17 +338,21 @@ def _save_spectral_heatmap_figure(
             float(np.max(np.asarray(heatmap["y"], dtype=float))),
         ],
         cmap=cmap_name,
+        vmin=vmin,
+        vmax=vmax,
     )
 
     _style_axes(
         ax,
-        str(figure_settings.get("xlabel") or "Wavenumber (cm⁻¹)"),
-        "Time / Potential",
+        str(figure_settings.get("xlabel") or r"Wavenumber (cm$^{-1}$)"),
+        "Time (s)",
     )
 
     xlim = _coerce_axis_range(figure_settings.get("xlim"))
     if xlim:
         ax.set_xlim(*xlim)
+    if _should_reverse_wavenumber_axis(figure_settings):
+        ax.invert_xaxis()
 
     cax = ax.inset_axes([0.7, 1.02, 0.17, 0.035], transform=ax.transAxes)
     cbar = fig.colorbar(image, cax=cax, orientation="horizontal")
@@ -313,7 +382,7 @@ def _save_spectral_heatmap_figure(
     )
 
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
-    fig.savefig(target_path, dpi=300, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
+    fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
 
 
@@ -337,7 +406,31 @@ def _parse_timeseries_txt(path: Path) -> dict[str, Any]:
     }
 
 
-def _load_run_dataset(run_id: str, filename: str) -> dict[str, Any]:
+def _apply_wavenumber_crop(parsed: dict[str, Any], crop_range: tuple[float, float] | None) -> dict[str, Any]:
+    if not crop_range:
+        return parsed
+
+    wn = np.asarray(parsed["wavenumbers"], dtype=float)
+    spectra = np.asarray(parsed["spectra"], dtype=float)
+    lo, hi = crop_range
+    mask = (wn >= lo) & (wn <= hi)
+    if np.count_nonzero(mask) < 2:
+        raise HTTPException(status_code=400, detail="Crop range needs at least 2 wavenumber points")
+
+    cropped_wn = wn[mask]
+    cropped_spectra = spectra[:, mask]
+    return {
+        "wavenumbers": cropped_wn.tolist(),
+        "time": parsed["time"],
+        "spectra": cropped_spectra.tolist(),
+    }
+
+
+def _load_run_dataset(
+    run_id: str,
+    filename: str,
+    crop_range: tuple[float, float] | None = None,
+) -> dict[str, Any]:
     run_dir = RUNS_DIR / run_id
     if not run_dir.is_dir():
         raise HTTPException(status_code=404, detail="run_id not found")
@@ -348,9 +441,41 @@ def _load_run_dataset(run_id: str, filename: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Extracted file not found: {stem}.txt")
 
     try:
-        return _parse_timeseries_txt(ts_path)
+        parsed = _parse_timeseries_txt(ts_path)
+        return _apply_wavenumber_crop(parsed, crop_range)
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=f"Failed to parse dataset: {e}") from e
+
+
+def _build_heatmap_payload(run_id: str, filename: str, heatmap_settings: dict[str, Any]) -> dict[str, Any]:
+    crop_range = _coerce_axis_range(heatmap_settings.get("crop_range"))
+    parsed = _load_run_dataset(run_id, filename, crop_range)
+    wn = np.asarray(parsed["wavenumbers"], dtype=float)
+    time_axis = np.asarray(parsed["time"], dtype=float)
+    spectra = np.asarray(parsed["spectra"], dtype=float)
+
+    if spectra.ndim != 2 or spectra.shape[0] != time_axis.size or spectra.shape[1] != wn.size:
+        raise HTTPException(status_code=400, detail="spectra/time/wavenumber shape mismatch")
+
+    time_range = _coerce_axis_range(heatmap_settings.get("time_range"))
+    if time_range:
+        start, end = time_range
+        indices = np.where((time_axis >= start) & (time_axis <= end))[0]
+        if indices.size:
+            time_axis = time_axis[indices]
+            spectra = spectra[indices]
+
+    return {
+        "x": wn.tolist(),
+        "y": time_axis.tolist(),
+        "z": spectra.tolist(),
+        "color_scale": heatmap_settings.get("color_scale"),
+        "crop_range": heatmap_settings.get("crop_range"),
+        "zmin": heatmap_settings.get("zmin"),
+        "zmax": heatmap_settings.get("zmax"),
+    }
 
 
 def _prune_temp_runs(max_keep: int = 5) -> None:
@@ -378,6 +503,35 @@ def _set_run_keep_record(run_dir: Path, keep_record: bool) -> None:
             temp_marker.unlink()
     else:
         temp_marker.touch(exist_ok=True)
+
+
+def _run_extraction_capture_output(
+    srs_path: str,
+    mode: str,
+    outdir: str,
+    start_wn: float,
+    end_wn: float,
+) -> str:
+    """Run the legacy extractor without depending on the server stdout pipe."""
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+        run_extraction(
+            srs_path=srs_path,
+            mode=mode,
+            outdir=outdir,
+            start_wn=start_wn,
+            end_wn=end_wn,
+        )
+    return output.getvalue()
+
+
+def _format_extraction_error(exc: Exception, captured_output: str = "") -> str:
+    message = str(exc) or exc.__class__.__name__
+    lines = [line.strip() for line in captured_output.splitlines() if line.strip()]
+    if lines:
+        tail = " | ".join(lines[-6:])
+        return f"{message}; extractor output: {tail}"
+    return message
 
 
 def _write_run_record(run_dir: Path, keep_record: bool, record: dict[str, Any]) -> Path:
@@ -491,9 +645,10 @@ async def extract_all(payload: dict[str, Any]) -> dict[str, Any]:
             continue
         # Copy to run dir so the extractor can work there
         dest = run_dir / filename
+        extraction_output = ""
         try:
             shutil.copy2(str(srs_src), str(dest))
-            run_extraction(
+            extraction_output = _run_extraction_capture_output(
                 srs_path=str(dest),
                 mode=mode,
                 outdir=str(run_dir),
@@ -507,7 +662,7 @@ async def extract_all(payload: dict[str, Any]) -> dict[str, Any]:
             else:
                 failed[filename] = "Extraction produced no output"
         except Exception as e:
-            failed[filename] = str(e)
+            failed[filename] = _format_extraction_error(e, extraction_output)
 
     if not succeeded:
         raise HTTPException(status_code=500, detail=f"All extractions failed: {failed}")
@@ -529,7 +684,8 @@ async def get_dataset(payload: dict[str, Any]) -> dict[str, Any]:
     if not run_id or not filename:
         raise HTTPException(status_code=400, detail="run_id and filename are required")
 
-    parsed = _load_run_dataset(run_id, filename)
+    crop_range = _coerce_axis_range(payload.get("crop_range"))
+    parsed = _load_run_dataset(run_id, filename, crop_range)
     return {"filename": filename, **parsed}
 
 
@@ -571,7 +727,8 @@ async def integrate(payload: dict[str, Any]) -> dict[str, Any]:
                 status_code=400,
                 detail="Provide either dataset arrays or run_id + filename for integration",
             )
-        parsed = _load_run_dataset(run_id, filename)
+        crop_range = _coerce_axis_range(payload.get("crop_range"))
+        parsed = _load_run_dataset(run_id, filename, crop_range)
         wn = np.asarray(parsed["wavenumbers"], dtype=float)
         time_axis = np.asarray(parsed["time"], dtype=float)
         spectra = np.asarray(parsed["spectra"], dtype=float)
@@ -734,8 +891,9 @@ async def render_spectral_figure(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         spectral_path = run_dir / "spectral_waterfall.png"
         spectral_heatmap_path = run_dir / "spectral_heatmap.png"
+        heatmap_payload = _build_heatmap_payload(run_id, filename, heatmap if isinstance(heatmap, dict) else {})
         _save_spectral_figure(spectral_path, traces, figure_settings if isinstance(figure_settings, dict) else {})
-        _save_spectral_heatmap_figure(spectral_heatmap_path, heatmap, figure_settings if isinstance(figure_settings, dict) else {})
+        _save_spectral_heatmap_figure(spectral_heatmap_path, heatmap_payload, figure_settings if isinstance(figure_settings, dict) else {})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to render spectral figure: {e}") from e
 

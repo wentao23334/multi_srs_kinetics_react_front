@@ -1,5 +1,5 @@
-import type { FigureSettingsState, FitOutcome, FitResult, NumericRange } from '../types/workflow';
-import type { GetDatasetResponse } from '../types/api';
+import type { FigureSettingsState, FitOutcome, NumericRange } from '../types/workflow';
+import type { FitParams, GetDatasetResponse } from '../types/api';
 
 const colorScales: Record<string, string[]> = {
   None: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
@@ -16,18 +16,24 @@ const colorScales: Record<string, string[]> = {
 };
 
 export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
-  colorScheme: 'None',
+  global: {
+    dpi: 300,
+    widthCm: 10,
+    heightCm: 8,
+    reverseWavenumberAxis: false,
+  },
+  colorScheme: 'RdBu_r',
   overlay: {
-    xlabel: 'Time / Potential',
-    ylabel: 'Peak Area',
+    xlabel: 'Time (s)',
+    ylabel: 'Peak Area (a.u.)',
     xRangeInput: '',
     yRangeInput: '',
     showLabels: true,
     labelOffsetInput: '0,0',
   },
   normalized: {
-    xlabel: 'Time / Potential',
-    ylabel: 'Normalized Peak Area',
+    xlabel: 'Time (s)',
+    ylabel: 'Normalized Peak Area (a.u.)',
     xRangeInput: '',
     yRangeInput: '',
     showLabels: true,
@@ -35,10 +41,11 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
   },
   spectral: {
     title: 'SRS Waterfall',
-    xlabel: 'Wavenumber (cm⁻¹)',
-    ylabel: 'Intensity + Offset',
+    xlabel: 'Wavenumber (cm$^{-1}$)',
+    ylabel: 'Absorbance (a.u.)',
     xRangeInput: '',
     yRangeInput: '',
+    zRangeInput: '',
   },
 };
 
@@ -265,22 +272,16 @@ export function buildHeatmapPayload(
   };
 }
 
-export function normalizeSeriesPair(yRaw: number[], yFit: number[]) {
-  const combined = [...yRaw, ...yFit].filter((value) => Number.isFinite(value));
-  if (!combined.length) {
-    return { raw: yRaw.map(() => 0), fit: yFit.map(() => 0) };
-  }
-
-  const minValue = Math.min(...combined);
-  const maxValue = Math.max(...combined);
-  const span = maxValue - minValue;
-  if (span < 1e-12) {
+export function normalizeSeriesPair(yRaw: number[], yFit: number[], params: FitParams) {
+  const baseline = Number(params.Yb);
+  const amplitude = Number(params.A);
+  if (!Number.isFinite(baseline) || !Number.isFinite(amplitude) || Math.abs(amplitude) < 1e-12) {
     return { raw: yRaw.map(() => 0), fit: yFit.map(() => 0) };
   }
 
   return {
-    raw: yRaw.map((value) => (value - minValue) / span),
-    fit: yFit.map((value) => (value - minValue) / span),
+    raw: yRaw.map((value) => (value - baseline) / amplitude),
+    fit: yFit.map((value) => (value - baseline) / amplitude),
   };
 }
 
@@ -289,26 +290,29 @@ export function isFitError(result: FitOutcome | undefined): result is { error: s
 }
 
 export function buildSuccessfulSeriesPayload(
-  extractedFilenames: string[],
-  fitResults: Record<string, FitOutcome>,
+  series: Array<{
+    filename: string;
+    full_time: number[];
+    full_areas: number[];
+    x_fit: number[];
+    y_fit: number[];
+    x_raw: number[];
+    y_raw: number[];
+    y_fit_norm: number[];
+  }>,
   getFileColor: (filename: string) => string,
 ) {
-  return extractedFilenames
-    .filter((filename) => fitResults[filename] && !isFitError(fitResults[filename]))
-    .map((filename) => {
-      const result = fitResults[filename] as FitResult;
-      return {
-        label: String(filename).replace(/\.srs$/i, ''),
-        color: getFileColor(filename),
-        full_time: result.full_time,
-        full_areas: result.full_areas,
-        x_fit: result.x_sorted,
-        y_fit: result.y_fit,
-        x_raw: result.x_selected,
-        y_raw: result.y_selected_norm,
-        y_fit_norm: result.y_fit_norm,
-      };
-    });
+  return series.map((item) => ({
+    label: String(item.filename).replace(/\.srs$/i, ''),
+    color: getFileColor(item.filename),
+    full_time: item.full_time,
+    full_areas: item.full_areas,
+    x_fit: item.x_fit,
+    y_fit: item.y_fit,
+    x_raw: item.x_raw,
+    y_raw: item.y_raw,
+    y_fit_norm: item.y_fit_norm,
+  }));
 }
 
 export function summarizeFitResults(fitResults: Record<string, FitOutcome>, extractedFilenames: string[]) {

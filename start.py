@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -41,11 +42,20 @@ def _frontend_needs_build() -> bool:
     return latest_source > latest_dist
 
 
+def _resolve_npm() -> str:
+    candidates = ["npm.cmd", "npm"] if sys.platform.startswith("win") else ["npm"]
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    raise FileNotFoundError("npm not found in PATH")
+
+
 def _run_frontend_build() -> None:
     if not (ROOT / "node_modules").is_dir():
         raise SystemExit("Missing node_modules. Run `npm install` in this folder first.")
 
-    subprocess.run(["npm", "run", "build"], cwd=ROOT, check=True)
+    subprocess.run([_resolve_npm(), "run", "build"], cwd=ROOT, check=True)
 
 
 def main() -> None:

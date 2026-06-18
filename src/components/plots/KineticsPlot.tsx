@@ -1,6 +1,36 @@
-import { useEffect, useEffectEvent, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { NumericRange, IntegrationCacheEntry } from '../../types/workflow';
 import { usePlotly } from '../../hooks/usePlotly';
+import { getSnappedRange } from '../../lib/workflowUtils';
+
+type PlotlyAxis = {
+  _offset?: unknown;
+  _length?: unknown;
+  range?: unknown;
+  l2p?: unknown;
+  p2l?: unknown;
+};
+
+type PlotlyDiv = HTMLDivElement & {
+  _fullLayout?: {
+    xaxis?: PlotlyAxis;
+  };
+  on?: (eventName: string, handler: () => void) => void;
+  off?: (eventName: string, handler: () => void) => void;
+};
+
+type AxisMeta = {
+  offset: number;
+  length: number;
+  rangeKey: string;
+  l2p: (value: number) => number;
+  p2l: (value: number) => number;
+};
+
+type DraftRangeState = {
+  sourceKey: string;
+  range: NumericRange;
+};
 
 interface KineticsPlotProps {
   filename: string | null;
@@ -17,20 +47,57 @@ export function KineticsPlot({
 }: KineticsPlotProps) {
   const plotRef = useRef<HTMLDivElement | null>(null);
   const rangeRef = useRef<NumericRange | null>(fitRange);
+  const axisMetaRef = useRef<AxisMeta | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
   const { plotly, errorMessage } = usePlotly();
-  const [draftRange, setDraftRange] = useState<NumericRange | null>(fitRange);
-  const [axisMeta, setAxisMeta] = useState<{ offset: number; length: number; l2p: (value: number) => number; p2l: (value: number) => number } | null>(null);
+  const fitRangeKey = `${filename ?? ''}:${fitRange?.start ?? 'null'}|${fitRange?.end ?? 'null'}`;
+  const [draftRange, setDraftRange] = useState<DraftRangeState | null>(null);
+  const [axisMeta, setAxisMeta] = useState<AxisMeta | null>(null);
 
   useEffect(() => {
-    setDraftRange(fitRange);
     rangeRef.current = fitRange;
-  }, [fitRange?.start, fitRange?.end]);
+  }, [filename, fitRange]);
 
-  const emitFitRangeChange = useEffectEvent((nextRange: NumericRange) => {
+  const captureAxisMeta = useCallback(() => {
+    const plotDiv = plotRef.current as PlotlyDiv | null;
+    const axis = plotDiv?._fullLayout?.xaxis;
+    if (
+      axis &&
+      typeof axis._offset === 'number' &&
+      typeof axis._length === 'number' &&
+      typeof axis.l2p === 'function' &&
+      typeof axis.p2l === 'function'
+    ) {
+      const rangeKey = Array.isArray(axis.range) ? axis.range.map((value: unknown) => String(value)).join('|') : '';
+      const l2p = axis.l2p as (value: number) => number;
+      const p2l = axis.p2l as (value: number) => number;
+      const nextMeta: AxisMeta = {
+        offset: axis._offset,
+        length: axis._length,
+        rangeKey,
+        l2p: l2p.bind(axis),
+        p2l: p2l.bind(axis),
+      };
+      const previousMeta = axisMetaRef.current;
+      axisMetaRef.current = nextMeta;
+      if (
+        !previousMeta ||
+        previousMeta.offset !== nextMeta.offset ||
+        previousMeta.length !== nextMeta.length ||
+        previousMeta.rangeKey !== nextMeta.rangeKey
+      ) {
+        setAxisMeta(nextMeta);
+      }
+      return nextMeta;
+    }
+    return null;
+  }, []);
+
+  const emitFitRangeChange = useCallback((nextRange: NumericRange) => {
     if (!filename) return;
     onFitRangeChange(filename, nextRange);
-  });
+  }, [filename, onFitRangeChange]);
 
   useEffect(() => {
     if (!plotly || !plotRef.current || !filename || !integrationData) return;
@@ -38,10 +105,35 @@ export function KineticsPlot({
     const tMin = Math.min(...integrationData.time);
     const tMax = Math.max(...integrationData.time);
     const resolvedRange = fitRange ?? { start: tMin, end: tMax };
+    const plotDiv = plotRef.current as PlotlyDiv;
+    let resizeObserver: ResizeObserver | null = null;
+    let disposed = false;
+    const syncAxisMeta = () => {
+      if (!disposed) {
+        captureAxisMeta();
+      }
+    };
+
+    const scheduleAxisSync = () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+      }
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        if (!plotRef.current || disposed) return;
+
+        const resizeResult = plotly?.Plots?.resize?.(plotRef.current);
+        if (resizeResult && typeof resizeResult.then === 'function') {
+          resizeResult.then(syncAxisMeta).catch(syncAxisMeta);
+          return;
+        }
+        syncAxisMeta();
+      });
+    };
 
     plotly
       .newPlot(
-        plotRef.current,
+        plotDiv,
         [
           {
             x: integrationData.time,
@@ -128,34 +220,40 @@ export function KineticsPlot({
         },
       )
       .then(() => {
-        const plotDiv = plotRef.current as any;
-        const axis = plotDiv?._fullLayout?.xaxis;
-        if (
-          axis &&
-          typeof axis._offset === 'number' &&
-          typeof axis._length === 'number' &&
-          typeof axis.l2p === 'function' &&
-          typeof axis.p2l === 'function'
-        ) {
-          setAxisMeta({
-            offset: axis._offset,
-            length: axis._length,
-            l2p: axis.l2p.bind(axis),
-            p2l: axis.p2l.bind(axis),
-          });
+        if (disposed) return;
+        syncAxisMeta();
+
+        plotDiv.on?.('plotly_afterplot', syncAxisMeta);
+        plotDiv.on?.('plotly_relayout', syncAxisMeta);
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(scheduleAxisSync);
+          resizeObserver.observe(plotDiv);
         }
       })
       .catch(() => {});
 
     return () => {
+      disposed = true;
+      resizeObserver?.disconnect();
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
       setAxisMeta(null);
+      axisMetaRef.current = null;
+      plotDiv.off?.('plotly_afterplot', syncAxisMeta);
+      plotDiv.off?.('plotly_relayout', syncAxisMeta);
+      if (plotly && plotDiv && typeof plotly.purge === 'function') {
+        plotly.purge(plotDiv);
+      }
     };
-  }, [filename, fitRange, integrationData, plotly]);
+  }, [captureAxisMeta, filename, fitRange, integrationData, plotly]);
 
-  const currentRange = draftRange ?? fitRange;
+  const currentRange = draftRange?.sourceKey === fitRangeKey ? draftRange.range : fitRange;
 
   const startDrag = (handle: 'start' | 'end') => (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!axisMeta || !currentRange || !plotRef.current || !filename) return;
+    const activeAxisMeta = captureAxisMeta() ?? axisMetaRef.current ?? axisMeta;
+    if (!activeAxisMeta || !currentRange || !plotRef.current || !filename || !integrationData) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -164,10 +262,11 @@ export function KineticsPlot({
     const plotDiv = plotRef.current;
 
     const onMove = (moveEvent: PointerEvent) => {
+      const currentAxisMeta = axisMetaRef.current ?? activeAxisMeta;
       const rect = plotDiv.getBoundingClientRect();
-      const pixel = moveEvent.clientX - rect.left - axisMeta.offset;
-      const clamped = Math.max(0, Math.min(axisMeta.length, pixel));
-      const value = Number(axisMeta.p2l(clamped));
+      const pixel = moveEvent.clientX - rect.left - currentAxisMeta.offset;
+      const clamped = Math.max(0, Math.min(currentAxisMeta.length, pixel));
+      const value = Number(currentAxisMeta.p2l(clamped));
       const baseRange = rangeRef.current ?? currentRange;
       if (!baseRange) return;
       const nextRange = handle === 'start'
@@ -179,7 +278,7 @@ export function KineticsPlot({
             start: Math.min(baseRange.start, value),
             end: Math.max(baseRange.start, value),
           };
-      setDraftRange(nextRange);
+      setDraftRange({ sourceKey: fitRangeKey, range: nextRange });
       rangeRef.current = nextRange;
     };
 
@@ -189,7 +288,11 @@ export function KineticsPlot({
       draggingRef.current = false;
       const finalRange = rangeRef.current ?? currentRange;
       if (finalRange) {
-        emitFitRangeChange(finalRange);
+        const axis = Array.from(new Set(integrationData.time.slice().sort((a, b) => a - b)));
+        const snappedRange = getSnappedRange(axis, finalRange.start, finalRange.end);
+        setDraftRange({ sourceKey: fitRangeKey, range: snappedRange });
+        rangeRef.current = snappedRange;
+        emitFitRangeChange(snappedRange);
       }
     };
 
@@ -224,11 +327,11 @@ export function KineticsPlot({
             return (
               <div
                 key={handle}
-                className="absolute top-0 bottom-0 z-20 w-4 -translate-x-1/2 cursor-col-resize"
+                className="absolute top-0 bottom-0 z-20 flex w-4 -translate-x-1/2 cursor-col-resize justify-center"
               style={{ left }}
               onPointerDown={startDrag(handle)}
             >
-                <div className="mx-auto h-full border-l-2 border-dashed border-purple-400" />
+                <div className="h-full w-0 border-l-2 border-dashed border-purple-400" />
               </div>
             );
           })}

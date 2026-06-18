@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -8,6 +9,17 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+DEV_BACKEND_PORT = "8002"
+DEV_FRONTEND_PORT = "5173"
+
+
+def _resolve_npm_command() -> str:
+    candidates = ["npm.cmd", "npm", "npx.cmd", "npx"] if sys.platform.startswith("win") else ["npm", "npx"]
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    raise FileNotFoundError("npm executable not found in PATH")
 
 
 def _terminate(proc: subprocess.Popen[bytes] | None) -> None:
@@ -21,6 +33,7 @@ def _terminate(proc: subprocess.Popen[bytes] | None) -> None:
 
 
 def main() -> None:
+    npm_command = _resolve_npm_command()
     backend = subprocess.Popen(
         [
             sys.executable,
@@ -31,12 +44,12 @@ def main() -> None:
             "--host",
             "127.0.0.1",
             "--port",
-            "8000",
+            DEV_BACKEND_PORT,
         ],
         cwd=ROOT,
     )
     frontend = subprocess.Popen(
-        ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
+        [npm_command, "run", "dev", "--", "--host", "127.0.0.1", "--port", DEV_FRONTEND_PORT],
         cwd=ROOT,
     )
 

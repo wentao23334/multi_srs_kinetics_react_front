@@ -4,6 +4,7 @@ import type {
   FigurePanelSettings,
   FigureSettingsState,
   FitRangeMap,
+  GlobalImageSettings,
   SpectralFigureSettings,
 } from '../../types/workflow';
 
@@ -25,6 +26,10 @@ interface LeftControlPanelProps {
   onDefaultStartWnChange: (value: number) => void;
   defaultEndWn: number;
   onDefaultEndWnChange: (value: number) => void;
+  cropStartWnInput: string;
+  onCropStartWnInputChange: (value: string) => void;
+  cropEndWnInput: string;
+  onCropEndWnInputChange: (value: string) => void;
   extractPending: boolean;
   onExtractAll: () => void;
   integrationRange: [number, number];
@@ -48,13 +53,74 @@ interface LeftControlPanelProps {
     key: keyof FigurePanelSettings,
     value: string | boolean,
   ) => void;
+  onGlobalImageSettingChange: (key: keyof GlobalImageSettings, value: number | boolean) => void;
   onSpectralFigureChange: (key: keyof SpectralFigureSettings, value: string) => void;
   onRenderSpectralFigure: () => void;
   spectralFigurePending: boolean;
   spectralFigureStatus: string;
 }
 
-type SectionKey = 'step1' | 'step2' | 'step3' | 'step4';
+type SectionKey = 'step1' | 'step2' | 'step3' | 'step4' | 'step5';
+
+function GlobalImageSettingsCard({
+  settings,
+  onChange,
+}: {
+  settings: GlobalImageSettings;
+  onChange: (key: keyof GlobalImageSettings, value: number | boolean) => void;
+}) {
+  return (
+    <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
+      <div className="rounded-xl border border-sky-500/15 bg-sky-500/5 px-3 py-2 text-[11px] font-medium text-slate-400">
+        Applies to overlay, normalized, spectral waterfall, and spectral heatmap exports.
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-xs font-medium text-slate-300">
+          <span className="mb-1.5 block">DPI</span>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={settings.dpi}
+            onChange={(event) => onChange('dpi', Number(event.target.value))}
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+          />
+        </label>
+        <label className="block text-xs font-medium text-slate-300">
+          <span className="mb-1.5 block">Width (cm)</span>
+          <input
+            type="number"
+            min={0.1}
+            step={0.1}
+            value={settings.widthCm}
+            onChange={(event) => onChange('widthCm', Number(event.target.value))}
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+          />
+        </label>
+      </div>
+      <label className="block text-xs font-medium text-slate-300">
+        <span className="mb-1.5 block">Height (cm)</span>
+        <input
+          type="number"
+          min={0.1}
+          step={0.1}
+          value={settings.heightCm}
+          onChange={(event) => onChange('heightCm', Number(event.target.value))}
+          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+        />
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+        <input
+          type="checkbox"
+          checked={settings.reverseWavenumberAxis}
+          onChange={(event) => onChange('reverseWavenumberAxis', event.target.checked)}
+          className="h-4 w-4 rounded border-white/20 bg-black/30 text-sky-500 focus:ring-sky-500/50 focus:ring-offset-0 transition-all"
+        />
+        <span>Reverse Wavenumber Axis</span>
+      </label>
+    </div>
+  );
+}
 
 function FigurePanelCard({
   title,
@@ -190,6 +256,15 @@ function SpectralFigureCard({
             />
           </label>
         </div>
+        <label className="block text-xs font-medium text-slate-300">
+          <span className="mb-1.5 block">Heatmap Color Range</span>
+          <input
+            value={settings.zRangeInput}
+            onChange={(event) => onChange('zRangeInput', event.target.value)}
+            placeholder="optional, e.g. -0.2,0.8"
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+          />
+        </label>
       </div>
     </div>
   );
@@ -213,6 +288,10 @@ export function LeftControlPanel({
   onDefaultStartWnChange,
   defaultEndWn,
   onDefaultEndWnChange,
+  cropStartWnInput,
+  onCropStartWnInputChange,
+  cropEndWnInput,
+  onCropEndWnInputChange,
   extractPending,
   onExtractAll,
   integrationRange,
@@ -228,6 +307,7 @@ export function LeftControlPanel({
   figureSettings,
   onFigureColorSchemeChange,
   onFigurePanelChange,
+  onGlobalImageSettingChange,
   onSpectralFigureChange,
   onRenderSpectralFigure,
   spectralFigurePending,
@@ -240,6 +320,7 @@ export function LeftControlPanel({
     step2: false,
     step3: false,
     step4: false,
+    step5: false,
   });
 
   const toggleSection = (key: SectionKey, disabled = false) => {
@@ -360,6 +441,29 @@ export function LeftControlPanel({
                     type="number"
                     value={defaultEndWn}
                     onChange={(event) => onDefaultEndWnChange(Number(event.target.value))}
+                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-medium text-slate-300">
+                  <span className="mb-1.5 block">Crop Start WN</span>
+                  <input
+                    type="number"
+                    value={cropStartWnInput}
+                    onChange={(event) => onCropStartWnInputChange(event.target.value)}
+                    placeholder="optional"
+                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-slate-300">
+                  <span className="mb-1.5 block">Crop End WN</span>
+                  <input
+                    type="number"
+                    value={cropEndWnInput}
+                    onChange={(event) => onCropEndWnInputChange(event.target.value)}
+                    placeholder="optional"
                     className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
                   />
                 </label>
@@ -608,6 +712,34 @@ export function LeftControlPanel({
                 <p className="text-[11px] font-medium text-slate-500">{spectralFigureStatus}</p>
               </div>
             </div>
+          )}
+        </section>
+
+        <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
+          <button
+            type="button"
+            onClick={() => toggleSection('step5', currentStep < 2)}
+            className="mb-5 flex w-full items-center justify-between gap-3 border-t border-white/[0.04] pt-8 text-left"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-cyan-600 text-xs font-bold text-white shadow-lg shadow-sky-500/30">5</span>
+              <h3 className="text-sm font-semibold tracking-wide text-white/90">Image Parameters</h3>
+            </div>
+            <span
+              aria-hidden="true"
+              className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
+                openSections.step5 ? 'rotate-0' : '-rotate-90'
+              }`}
+            >
+              ▼
+            </span>
+          </button>
+
+          {openSections.step5 && (
+            <GlobalImageSettingsCard
+              settings={figureSettings.global}
+              onChange={onGlobalImageSettingChange}
+            />
           )}
         </section>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { GetDatasetResponse } from '../../types/api';
 import type { NumericRange } from '../../types/workflow';
 import { usePlotly } from '../../hooks/usePlotly';
@@ -6,6 +6,31 @@ import {
   buildWaterfallTracePayload,
   formatRangeInput,
 } from '../../lib/workflowUtils';
+
+type PlotlyAxis = {
+  _offset?: unknown;
+  _length?: unknown;
+  l2p?: unknown;
+  p2l?: unknown;
+};
+
+type PlotlyDiv = HTMLDivElement & {
+  _fullLayout?: {
+    xaxis?: PlotlyAxis;
+  };
+};
+
+type AxisMeta = {
+  offset: number;
+  length: number;
+  l2p: (value: number) => number;
+  p2l: (value: number) => number;
+};
+
+type DraftRangeState = {
+  sourceKey: string;
+  range: [number, number];
+};
 
 interface WaterfallPlotProps {
   dataset: GetDatasetResponse | null;
@@ -32,26 +57,48 @@ export function WaterfallPlot({
   const rangeRef = useRef<[number, number]>(integrationRange);
   const draggingRef = useRef(false);
   const { plotly, errorMessage } = usePlotly();
-  const [draftRange, setDraftRange] = useState<[number, number]>(integrationRange);
-  const [axisMeta, setAxisMeta] = useState<{ offset: number; length: number; l2p: (value: number) => number; p2l: (value: number) => number } | null>(null);
+  const integrationRangeKey = `${dataset?.filename ?? ''}:${integrationRange[0]}|${integrationRange[1]}`;
+  const [draftRange, setDraftRange] = useState<DraftRangeState | null>(null);
+  const [axisMeta, setAxisMeta] = useState<AxisMeta | null>(null);
 
   useEffect(() => {
-    setDraftRange(integrationRange);
     rangeRef.current = integrationRange;
-  }, [integrationRange[0], integrationRange[1]]);
+  }, [integrationRange]);
 
-  const emitVisibleTimeRangeChange = useEffectEvent((filename: string, range: NumericRange) => {
+  const emitVisibleTimeRangeChange = useCallback((filename: string, range: NumericRange) => {
     onVisibleTimeRangeChange(filename, range);
-  });
+  }, [onVisibleTimeRangeChange]);
 
-  const emitIntegrationRangeChange = useEffectEvent(
+  const emitIntegrationRangeChange = useCallback(
     (range: [number, number], shouldDebounce: boolean) => {
       onIntegrationRangeChange(range, shouldDebounce);
     },
+    [onIntegrationRangeChange],
   );
+
+  const captureAxisMeta = useCallback((plotDiv: PlotlyDiv) => {
+    const axis = plotDiv._fullLayout?.xaxis;
+    if (
+      axis &&
+      typeof axis._offset === 'number' &&
+      typeof axis._length === 'number' &&
+      typeof axis.l2p === 'function' &&
+      typeof axis.p2l === 'function'
+    ) {
+      const l2p = axis.l2p as (value: number) => number;
+      const p2l = axis.p2l as (value: number) => number;
+      setAxisMeta({
+        offset: axis._offset,
+        length: axis._length,
+        l2p: l2p.bind(axis),
+        p2l: p2l.bind(axis),
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!plotly || !plotRef.current || !dataset) return;
+    const plotDiv = plotRef.current as PlotlyDiv;
     const { traces: waterfallTraces, visibleRange } = buildWaterfallTracePayload(
       dataset,
       gap,
@@ -65,7 +112,7 @@ export function WaterfallPlot({
 
     plotly
       .react(
-        plotRef.current,
+        plotDiv,
         waterfallTraces.map((trace) => ({
           x: trace.x,
           y: trace.y,
@@ -151,29 +198,31 @@ export function WaterfallPlot({
         },
       )
       .then(() => {
-        const plotDiv = plotRef.current as any;
-        const axis = plotDiv?._fullLayout?.xaxis;
-        if (
-          axis &&
-          typeof axis._offset === 'number' &&
-          typeof axis._length === 'number' &&
-          typeof axis.l2p === 'function' &&
-          typeof axis.p2l === 'function'
-        ) {
-          setAxisMeta({
-            offset: axis._offset,
-            length: axis._length,
-            l2p: axis.l2p.bind(axis),
-            p2l: axis.p2l.bind(axis),
-          });
-        }
+        captureAxisMeta(plotDiv);
       })
       .catch(() => {});
 
     return () => {
       setAxisMeta(null);
+      if (plotly && typeof plotly.purge === 'function') {
+        plotly.purge(plotDiv);
+      }
     };
-  }, [colorScheme, dataset, gap, integrationRange, maxLines, plotly, timeRangeInput]);
+  }, [
+    captureAxisMeta,
+    colorScheme,
+    dataset,
+    emitVisibleTimeRangeChange,
+    gap,
+    integrationRange,
+    maxLines,
+    plotly,
+    timeRangeInput,
+  ]);
+
+  const currentRange = draftRange?.sourceKey === integrationRangeKey
+    ? draftRange.range
+    : integrationRange;
 
   const startDrag = (handle: 'start' | 'end') => (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!axisMeta || !plotRef.current) return;
@@ -193,7 +242,7 @@ export function WaterfallPlot({
       const nextRange = handle === 'start'
         ? [Math.min(value, baseRange[1]), Math.max(value, baseRange[1])] as [number, number]
         : [Math.min(baseRange[0], value), Math.max(baseRange[0], value)] as [number, number];
-      setDraftRange(nextRange);
+      setDraftRange({ sourceKey: integrationRangeKey, range: nextRange });
       rangeRef.current = nextRange;
     };
 
@@ -229,7 +278,7 @@ export function WaterfallPlot({
       <div ref={plotRef} className="h-full w-full" />
       {axisMeta &&
         (['start', 'end'] as const).map((handle) => {
-          const value = handle === 'start' ? draftRange[0] : draftRange[1];
+          const value = handle === 'start' ? currentRange[0] : currentRange[1];
           const left = axisMeta.offset + axisMeta.l2p(value);
           return (
             <div

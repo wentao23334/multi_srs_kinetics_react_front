@@ -21,7 +21,10 @@ interface MainWorkspaceProps {
   waterfallMaxLines: number;
   onWaterfallMaxLinesChange: (value: number) => void;
   waterfallTimeRangeInput: string;
+  waterfallAppliedTimeRangeInput: string;
   onWaterfallTimeRangeInputChange: (value: string) => void;
+  onWaterfallTimeRangeInputFocus: () => void;
+  onWaterfallTimeRangeInputCommit: () => void;
   waterfallColorScheme: string;
   onWaterfallColorSchemeChange: (value: string) => void;
   onVisibleTimeRangeChange: (filename: string, range: NumericRange) => void;
@@ -82,7 +85,10 @@ export function MainWorkspace({
   waterfallMaxLines,
   onWaterfallMaxLinesChange,
   waterfallTimeRangeInput,
+  waterfallAppliedTimeRangeInput,
   onWaterfallTimeRangeInputChange,
+  onWaterfallTimeRangeInputFocus,
+  onWaterfallTimeRangeInputCommit,
   waterfallColorScheme,
   onWaterfallColorSchemeChange,
   onVisibleTimeRangeChange,
@@ -138,6 +144,13 @@ export function MainWorkspace({
                 <input
                   value={waterfallTimeRangeInput}
                   onChange={(event) => onWaterfallTimeRangeInputChange(event.target.value)}
+                  onFocus={onWaterfallTimeRangeInputFocus}
+                  onBlur={onWaterfallTimeRangeInputCommit}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur();
+                    }
+                  }}
                   placeholder="1,5"
                   className="w-28 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
                 />
@@ -171,7 +184,7 @@ export function MainWorkspace({
               integrationRange={integrationRange}
               gap={waterfallGap}
               maxLines={waterfallMaxLines}
-              timeRangeInput={waterfallTimeRangeInput}
+              timeRangeInput={waterfallAppliedTimeRangeInput}
               colorScheme={waterfallColorScheme}
               onVisibleTimeRangeChange={onVisibleTimeRangeChange}
               onIntegrationRangeChange={onIntegrationRangeChange}

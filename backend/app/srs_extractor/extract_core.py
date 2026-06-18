@@ -48,7 +48,7 @@ def run_extraction(srs_path: str, mode: str = "fast", outdir: str = "output", st
     else:
         header = "\t".join(f"{x:.6f}" for x in wn_axis)
         np.savetxt(out_ts, spectra, delimiter="\t", header=header,comments="", encoding="utf-8")
-    print(f"📄 已保存时间分辨光谱: {out_ts}")
+    print(f"[OK] 已保存时间分辨光谱: {out_ts}")
     # Step 5: 背景
     if mode == "fast":
         bg_offsets = detect_payloads_by_markers(srs)
@@ -82,6 +82,6 @@ def run_extraction(srs_path: str, mode: str = "fast", outdir: str = "output", st
         out_mat = np.column_stack([wn_axis, bg_matrix.T])
         np.savetxt(out_bg, out_mat, delimiter="\t", header=header,
                    comments="", encoding="utf-8")
-        print(f"📄 已保存背景文件: {out_bg}")
+        print(f"[OK] 已保存背景文件: {out_bg}")
     else:
-        print("⚠ 未导出背景文件")
+        print("[WARN] 未导出背景文件")

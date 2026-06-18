@@ -7,6 +7,7 @@ import {
 import type {
   FigurePanelSettings,
   FigureSettingsState,
+  GlobalImageSettings,
   SpectralFigureSettings,
 } from '../types/workflow';
 
@@ -17,6 +18,12 @@ export function useFigureSettings() {
 
   const buildFigureRenderSettings = useCallback(
     (settings: FigureSettingsState = figureSettings) => ({
+      global: {
+        dpi: Number.isFinite(settings.global.dpi) && settings.global.dpi > 0 ? settings.global.dpi : 300,
+        width_cm: Number.isFinite(settings.global.widthCm) && settings.global.widthCm > 0 ? settings.global.widthCm : 10,
+        height_cm: Number.isFinite(settings.global.heightCm) && settings.global.heightCm > 0 ? settings.global.heightCm : 8,
+        reverse_wavenumber_axis: settings.global.reverseWavenumberAxis,
+      },
       color_scheme: settings.colorScheme,
       overlay: {
         xlabel: settings.overlay.xlabel.trim() || 'Time / Potential',
@@ -48,14 +55,18 @@ export function useFigureSettings() {
       },
       spectral: {
         title: settings.spectral.title.trim() || 'SRS Waterfall',
-        xlabel: settings.spectral.xlabel.trim() || 'Wavenumber (cm⁻¹)',
-        ylabel: settings.spectral.ylabel.trim() || 'Intensity + Offset',
+        xlabel: settings.spectral.xlabel.trim() || 'Wavenumber (cm$^{-1}$)',
+        ylabel: settings.spectral.ylabel.trim() || 'Absorbance (a.u.)',
         xlim: (() => {
           const r = parseRangeInput(settings.spectral.xRangeInput);
           return r ? [r.start, r.end] : null;
         })(),
         ylim: (() => {
           const r = parseRangeInput(settings.spectral.yRangeInput);
+          return r ? [r.start, r.end] : null;
+        })(),
+        zlim: (() => {
+          const r = parseRangeInput(settings.spectral.zRangeInput);
           return r ? [r.start, r.end] : null;
         })(),
       },
@@ -92,10 +103,24 @@ export function useFigureSettings() {
     [],
   );
 
+  const handleGlobalImageSettingChange = useCallback(
+    (key: keyof GlobalImageSettings, value: number | boolean) => {
+      setFigureSettings((prev) => ({
+        ...prev,
+        global: {
+          ...prev.global,
+          [key]: value,
+        },
+      }));
+    },
+    [],
+  );
+
   return {
     figureSettings,
     setFigureSettings,
     buildFigureRenderSettings,
+    handleGlobalImageSettingChange,
     handleFigurePanelChange,
     handleFigureColorSchemeChange,
     handleSpectralFigureChange,

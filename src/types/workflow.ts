@@ -1,8 +1,4 @@
-import type {
-  FitKineticsResponse,
-  GetDatasetResponse,
-  IntegrateResponse,
-} from './api';
+import type { FitParams, GetDatasetResponse, IntegrateResponse } from './api';
 
 export interface NumericRange {
   start: number;
@@ -24,9 +20,18 @@ export interface SpectralFigureSettings {
   ylabel: string;
   xRangeInput: string;
   yRangeInput: string;
+  zRangeInput: string;
+}
+
+export interface GlobalImageSettings {
+  dpi: number;
+  widthCm: number;
+  heightCm: number;
+  reverseWavenumberAxis: boolean;
 }
 
 export interface FigureSettingsState {
+  global: GlobalImageSettings;
   colorScheme: string;
   overlay: FigurePanelSettings;
   normalized: FigurePanelSettings;
@@ -37,16 +42,18 @@ export interface IntegrationCacheEntry extends IntegrateResponse {
   filename: string;
 }
 
-export interface FitResult extends FitKineticsResponse {
+export interface FitResult {
   filename: string;
   fit_range: [number, number];
   points_used: number;
-  x_selected: number[];
-  y_selected: number[];
-  y_selected_norm: number[];
-  y_fit_norm: number[];
-  full_time: number[];
-  full_areas: number[];
+  params: FitParams;
+  metrics: { r2: number; rmse: number };
+  ci95: {
+    Yb: [number, number] | null;
+    A: [number, number] | null;
+    TD: [number, number] | null;
+    Tau: [number, number] | null;
+  };
   integration_window: [number, number];
 }
 
@@ -67,6 +74,8 @@ export interface RunRecordSnapshot {
       mode: 'fast' | 'realtime';
       start_wn: number;
       end_wn: number;
+      crop_start_wn: number | null;
+      crop_end_wn: number | null;
     };
     integration: {
       start_wn: number;

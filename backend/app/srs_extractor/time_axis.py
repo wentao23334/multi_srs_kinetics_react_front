@@ -28,7 +28,7 @@ def extract_time_axis(srs: bytes, frame_marker: bytes, mode: str = "fast"):
     if mode == "fast" and len(positions) > 1:
         first_gap = positions[1] - positions[0]
         if first_gap > 20000:  # 典型伪帧差距 40478 B
-            print(f"⚙ 检测到首帧异常（伪帧 #0），间距 = {first_gap} bytes，自动跳过。")
+            print(f"[INFO] 检测到首帧异常（伪帧 #0），间距 = {first_gap} bytes，自动跳过。")
             positions = positions[1:]
             time_vals = time_vals[1:] if len(time_vals) > len(positions) else time_vals
             # 🔧 同步修复布尔掩码长度
@@ -36,5 +36,5 @@ def extract_time_axis(srs: bytes, frame_marker: bytes, mode: str = "fast"):
 
     # ✅ 输出信息时使用最新掩码
     valid_vals = time_vals[finite]
-    print(f"✅ 解析时间/电位 {len(valid_vals)} 点，范围: {valid_vals[0]:.4f} ~ {valid_vals[-1]:.4f}")
+    print(f"[OK] 解析时间/电位 {len(valid_vals)} 点，范围: {valid_vals[0]:.4f} ~ {valid_vals[-1]:.4f}")
     return time_vals, positions
