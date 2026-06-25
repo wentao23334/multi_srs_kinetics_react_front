@@ -4,6 +4,7 @@ import {
   parseOffsetInput,
   parseRangeInput,
 } from '../lib/workflowUtils';
+import type { FigureRenderSettings } from '../types/api';
 import type {
   FigurePanelSettings,
   FigureSettingsState,
@@ -13,11 +14,16 @@ import type {
 
 type FigurePanelKey = 'overlay' | 'normalized';
 
+function parseRangeTuple(value: string): [number, number] | null {
+  const range = parseRangeInput(value);
+  return range ? [range.start, range.end] : null;
+}
+
 export function useFigureSettings() {
   const [figureSettings, setFigureSettings] = useState<FigureSettingsState>(DEFAULT_FIGURE_SETTINGS);
 
   const buildFigureRenderSettings = useCallback(
-    (settings: FigureSettingsState = figureSettings) => ({
+    (settings: FigureSettingsState = figureSettings): FigureRenderSettings => ({
       global: {
         dpi: Number.isFinite(settings.global.dpi) && settings.global.dpi > 0 ? settings.global.dpi : 300,
         width_cm: Number.isFinite(settings.global.widthCm) && settings.global.widthCm > 0 ? settings.global.widthCm : 10,
@@ -28,47 +34,26 @@ export function useFigureSettings() {
       overlay: {
         xlabel: settings.overlay.xlabel.trim() || 'Time / Potential',
         ylabel: settings.overlay.ylabel.trim() || 'Peak Area',
-        xlim: (() => {
-          const r = parseRangeInput(settings.overlay.xRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
-        ylim: (() => {
-          const r = parseRangeInput(settings.overlay.yRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
+        xlim: parseRangeTuple(settings.overlay.xRangeInput),
+        ylim: parseRangeTuple(settings.overlay.yRangeInput),
         show_labels: settings.overlay.showLabels,
         label_offset: parseOffsetInput(settings.overlay.labelOffsetInput),
       },
       normalized: {
         xlabel: settings.normalized.xlabel.trim() || 'Time / Potential',
         ylabel: settings.normalized.ylabel.trim() || 'Normalized Peak Area',
-        xlim: (() => {
-          const r = parseRangeInput(settings.normalized.xRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
-        ylim: (() => {
-          const r = parseRangeInput(settings.normalized.yRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
+        xlim: parseRangeTuple(settings.normalized.xRangeInput),
+        ylim: parseRangeTuple(settings.normalized.yRangeInput),
         show_labels: settings.normalized.showLabels,
         label_offset: parseOffsetInput(settings.normalized.labelOffsetInput),
       },
       spectral: {
-        title: settings.spectral.title.trim() || 'SRS Waterfall',
+        title: settings.spectral.title.trim(),
         xlabel: settings.spectral.xlabel.trim() || 'Wavenumber (cm$^{-1}$)',
         ylabel: settings.spectral.ylabel.trim() || 'Absorbance (a.u.)',
-        xlim: (() => {
-          const r = parseRangeInput(settings.spectral.xRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
-        ylim: (() => {
-          const r = parseRangeInput(settings.spectral.yRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
-        zlim: (() => {
-          const r = parseRangeInput(settings.spectral.zRangeInput);
-          return r ? [r.start, r.end] : null;
-        })(),
+        xlim: parseRangeTuple(settings.spectral.xRangeInput),
+        ylim: parseRangeTuple(settings.spectral.yRangeInput),
+        zlim: parseRangeTuple(settings.spectral.zRangeInput),
       },
     }),
     [figureSettings],
@@ -80,14 +65,6 @@ export function useFigureSettings() {
         ...figureSettings,
         [panel]: { ...figureSettings[panel], [key]: value },
       };
-      setFigureSettings(nextSettings);
-    },
-    [figureSettings],
-  );
-
-  const handleFigureColorSchemeChange = useCallback(
-    (value: string) => {
-      const nextSettings: FigureSettingsState = { ...figureSettings, colorScheme: value };
       setFigureSettings(nextSettings);
     },
     [figureSettings],
@@ -122,7 +99,6 @@ export function useFigureSettings() {
     buildFigureRenderSettings,
     handleGlobalImageSettingChange,
     handleFigurePanelChange,
-    handleFigureColorSchemeChange,
     handleSpectralFigureChange,
   };
 }

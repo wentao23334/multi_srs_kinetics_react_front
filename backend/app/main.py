@@ -855,6 +855,9 @@ async def render_fit_figures(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         overlay_settings = figure_settings.get("overlay", {}) if isinstance(figure_settings, dict) else {}
         normalized_settings = figure_settings.get("normalized", {}) if isinstance(figure_settings, dict) else {}
+        global_settings = figure_settings.get("global", {}) if isinstance(figure_settings, dict) else {}
+        overlay_settings = {**overlay_settings, "global": global_settings}
+        normalized_settings = {**normalized_settings, "global": global_settings}
         _save_fit_overlay_figure(overlay_path, overlay_series, overlay_settings)
         _save_fit_normalized_figure(normalized_path, normalized_series, normalized_settings)
     except Exception as e:

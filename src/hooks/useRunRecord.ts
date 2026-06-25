@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { apiClient } from '../lib/apiClient';
+import { workflowApi } from '../lib/workflowApi';
 
 /**
  * Manages a serial save queue for run records.
@@ -21,7 +21,7 @@ export function useRunRecord() {
       .catch(() => {})
       .then(async () => {
         try {
-          await apiClient.post('/save_run_record', payload);
+          await workflowApi.saveRunRecord(payload);
         } catch (error) {
           console.warn('Run record save error:', error);
         }

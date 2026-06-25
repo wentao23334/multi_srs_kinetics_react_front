@@ -1,17 +1,12 @@
 import { formatNumber, isFitError } from '../../lib/workflowUtils';
-import type { FitResultMap } from '../../types/workflow';
+import type { FitFigureUrlsState, FitResultMap } from '../../types/workflow';
 
 interface RightPreviewPanelProps {
   fitSummaryMsg: string;
   fitStatusBadge: string;
   fitResultCount: string;
   fitNormalizedMeta: string;
-  fitFigureUrls: {
-    overlay: string;
-    normalized: string;
-    spectral: string;
-    spectralHeatmap: string;
-  };
+  fitFigureUrls: FitFigureUrlsState;
   fitResults: FitResultMap;
   extractedFilenames: string[];
   getFileColor: (filename: string) => string;

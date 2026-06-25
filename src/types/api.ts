@@ -67,11 +67,18 @@ export interface FitParams {
   Tau: number;
 }
 
+export interface FitParamIntervals {
+  Yb: [number, number] | null;
+  A: [number, number] | null;
+  TD: [number, number] | null;
+  Tau: [number, number] | null;
+}
+
 export interface FitKineticsResponse {
   params: FitParams;
   init_guess: FitParams;
   metrics: { r2: number; rmse: number };
-  ci95: FitParams;
+  ci95: FitParamIntervals;
   x_sorted: number[];
   y_fit: number[];
   residuals: number[];
@@ -166,4 +173,23 @@ export interface RenderSpectralFigureRequest {
 export interface RenderSpectralFigureResponse {
   spectral_url: string;
   spectral_heatmap_url: string;
+}
+
+export interface SaveRunRecordRequest {
+  run_id: string;
+  keep_record: boolean;
+  record: object;
+}
+
+export interface SaveRunRecordResponse {
+  ok: boolean;
+  path: string;
+}
+
+export interface CleanupRunRequest {
+  run_id: string;
+}
+
+export interface CleanupRunResponse {
+  ok: boolean;
 }

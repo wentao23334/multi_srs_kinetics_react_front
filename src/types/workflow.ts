@@ -1,4 +1,4 @@
-import type { FitParams, GetDatasetResponse, IntegrateResponse } from './api';
+import type { FitParamIntervals, FitParams, GetDatasetResponse, IntegrateResponse } from './api';
 
 export interface NumericRange {
   start: number;
@@ -33,6 +33,7 @@ export interface GlobalImageSettings {
 export interface FigureSettingsState {
   global: GlobalImageSettings;
   colorScheme: string;
+  manualColors: Record<string, string>;
   overlay: FigurePanelSettings;
   normalized: FigurePanelSettings;
   spectral: SpectralFigureSettings;
@@ -48,12 +49,7 @@ export interface FitResult {
   points_used: number;
   params: FitParams;
   metrics: { r2: number; rmse: number };
-  ci95: {
-    Yb: [number, number] | null;
-    A: [number, number] | null;
-    TD: [number, number] | null;
-    Tau: [number, number] | null;
-  };
+  ci95: FitParamIntervals;
   integration_window: [number, number];
 }
 
@@ -62,6 +58,13 @@ export interface FitErrorResult {
 }
 
 export type FitOutcome = FitResult | FitErrorResult;
+
+export interface FitFigureUrlsState {
+  overlay: string;
+  normalized: string;
+  spectral: string;
+  spectralHeatmap: string;
+}
 
 export interface RunRecordSnapshot {
   updated_at: string;

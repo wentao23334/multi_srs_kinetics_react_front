@@ -37,7 +37,7 @@ export function usePlotly() {
     async function loadPlotly() {
       try {
         // @ts-expect-error Types are not exposed for the specific dist file
-        const module = await import('plotly.js/dist/plotly');
+        const module = await import('plotly.js/dist/plotly-basic');
         if (cancelled) return;
         setPlotly(resolvePlotlyApi(module));
       } catch (error) {

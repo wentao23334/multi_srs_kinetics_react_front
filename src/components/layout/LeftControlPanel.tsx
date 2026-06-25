@@ -7,6 +7,12 @@ import type {
   GlobalImageSettings,
   SpectralFigureSettings,
 } from '../../types/workflow';
+import {
+  FigurePanelCard,
+  GlobalImageSettingsCard,
+  ManualFitColorPicker,
+  SpectralFigureCard,
+} from './LeftControlPanelCards';
 
 interface LeftControlPanelProps {
   currentStep: number;
@@ -48,6 +54,9 @@ interface LeftControlPanelProps {
   ) => void;
   figureSettings: FigureSettingsState;
   onFigureColorSchemeChange: (value: string) => void;
+  manualFitColorGrid: string[];
+  fitFileColors: string[];
+  onManualFitColorChange: (filename: string, color: string) => void;
   onFigurePanelChange: (
     panel: 'overlay' | 'normalized',
     key: keyof FigurePanelSettings,
@@ -62,211 +71,44 @@ interface LeftControlPanelProps {
 
 type SectionKey = 'step1' | 'step2' | 'step3' | 'step4' | 'step5';
 
-function GlobalImageSettingsCard({
-  settings,
-  onChange,
-}: {
-  settings: GlobalImageSettings;
-  onChange: (key: keyof GlobalImageSettings, value: number | boolean) => void;
-}) {
-  return (
-    <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-      <div className="rounded-xl border border-sky-500/15 bg-sky-500/5 px-3 py-2 text-[11px] font-medium text-slate-400">
-        Applies to overlay, normalized, spectral waterfall, and spectral heatmap exports.
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">DPI</span>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={settings.dpi}
-            onChange={(event) => onChange('dpi', Number(event.target.value))}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
-          />
-        </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Width (cm)</span>
-          <input
-            type="number"
-            min={0.1}
-            step={0.1}
-            value={settings.widthCm}
-            onChange={(event) => onChange('widthCm', Number(event.target.value))}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
-          />
-        </label>
-      </div>
-      <label className="block text-xs font-medium text-slate-300">
-        <span className="mb-1.5 block">Height (cm)</span>
-        <input
-          type="number"
-          min={0.1}
-          step={0.1}
-          value={settings.heightCm}
-          onChange={(event) => onChange('heightCm', Number(event.target.value))}
-          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
-        />
-      </label>
-      <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
-        <input
-          type="checkbox"
-          checked={settings.reverseWavenumberAxis}
-          onChange={(event) => onChange('reverseWavenumberAxis', event.target.checked)}
-          className="h-4 w-4 rounded border-white/20 bg-black/30 text-sky-500 focus:ring-sky-500/50 focus:ring-offset-0 transition-all"
-        />
-        <span>Reverse Wavenumber Axis</span>
-      </label>
-    </div>
-  );
-}
-
-function FigurePanelCard({
+function SectionToggle({
+  step,
   title,
-  panelKey,
-  settings,
-  onChange,
+  open,
+  badgeClassName,
+  withDivider = true,
+  onClick,
 }: {
+  step: number;
   title: string;
-  panelKey: 'overlay' | 'normalized';
-  settings: FigurePanelSettings;
-  onChange: (
-    panel: 'overlay' | 'normalized',
-    key: keyof FigurePanelSettings,
-    value: string | boolean,
-  ) => void;
+  open: boolean;
+  badgeClassName: string;
+  withDivider?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{title}</p>
-      <div className="space-y-3">
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">X Axis Title</span>
-          <input
-            value={settings.xlabel}
-            onChange={(event) => onChange(panelKey, 'xlabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
-          />
-        </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Y Axis Title</span>
-          <input
-            value={settings.ylabel}
-            onChange={(event) => onChange(panelKey, 'ylabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
-          />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">X Axis Range</span>
-            <input
-              value={settings.xRangeInput}
-              onChange={(event) => onChange(panelKey, 'xRangeInput', event.target.value)}
-              placeholder="e.g. 0,160"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
-            />
-          </label>
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">Y Axis Range</span>
-            <input
-              value={settings.yRangeInput}
-              onChange={(event) => onChange(panelKey, 'yRangeInput', event.target.value)}
-              placeholder="e.g. 0,1.1"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
-            />
-          </label>
-        </div>
-        <div className="flex items-center gap-4 pt-1">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
-            <input
-              type="checkbox"
-              checked={settings.showLabels}
-              onChange={(event) => onChange(panelKey, 'showLabels', event.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
-            />
-            <span>Show Curve Labels</span>
-          </label>
-          <label className="flex-1 text-xs font-medium text-slate-300 flex items-center gap-2">
-            <span className="whitespace-nowrap">Offset %</span>
-            <input
-              value={settings.labelOffsetInput}
-              onChange={(event) => onChange(panelKey, 'labelOffsetInput', event.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
-            />
-          </label>
-        </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mb-5 flex w-full items-center justify-between gap-3 text-left ${
+        withDivider ? 'border-t border-white/[0.04] pt-8' : ''
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white shadow-lg ${badgeClassName}`}>
+          {step}
+        </span>
+        <h3 className="text-sm font-semibold tracking-wide text-white/90">{title}</h3>
       </div>
-    </div>
-  );
-}
-
-function SpectralFigureCard({
-  settings,
-  onChange,
-}: {
-  settings: SpectralFigureSettings;
-  onChange: (key: keyof SpectralFigureSettings, value: string) => void;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Spectral Figure</p>
-      <div className="space-y-3">
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Figure Title</span>
-          <input
-            value={settings.title}
-            onChange={(event) => onChange('title', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
-          />
-        </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">X Axis Title</span>
-          <input
-            value={settings.xlabel}
-            onChange={(event) => onChange('xlabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
-          />
-        </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Y Axis Title</span>
-          <input
-            value={settings.ylabel}
-            onChange={(event) => onChange('ylabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
-          />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">X Axis Range</span>
-            <input
-              value={settings.xRangeInput}
-              onChange={(event) => onChange('xRangeInput', event.target.value)}
-              placeholder="optional"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
-            />
-          </label>
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">Y Axis Range</span>
-            <input
-              value={settings.yRangeInput}
-              onChange={(event) => onChange('yRangeInput', event.target.value)}
-              placeholder="optional"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
-            />
-          </label>
-        </div>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Heatmap Color Range</span>
-          <input
-            value={settings.zRangeInput}
-            onChange={(event) => onChange('zRangeInput', event.target.value)}
-            placeholder="optional, e.g. -0.2,0.8"
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
-          />
-        </label>
-      </div>
-    </div>
+      <span
+        aria-hidden="true"
+        className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
+          open ? 'rotate-0' : '-rotate-90'
+        }`}
+      >
+        v
+      </span>
+    </button>
   );
 }
 
@@ -306,6 +148,9 @@ export function LeftControlPanel({
   onFitRangeInputChange,
   figureSettings,
   onFigureColorSchemeChange,
+  manualFitColorGrid,
+  fitFileColors,
+  onManualFitColorChange,
   onFigurePanelChange,
   onGlobalImageSettingChange,
   onSpectralFigureChange,
@@ -349,24 +194,14 @@ export function LeftControlPanel({
 
       <div className="flex-1 space-y-6 overflow-y-auto p-6 scroll-smooth">
         <section className={`transition-opacity duration-300 ${currentStep !== 1 ? 'opacity-50' : 'opacity-100'}`}>
-          <button
-            type="button"
+          <SectionToggle
+            step={1}
+            title="Data & Settings"
+            open={openSections.step1}
+            badgeClassName="from-blue-500 to-indigo-600 shadow-blue-500/30"
+            withDivider={false}
             onClick={() => toggleSection('step1')}
-            className="mb-5 flex w-full items-center justify-between gap-3 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white shadow-lg shadow-blue-500/30">1</span>
-              <h3 className="text-sm font-semibold tracking-wide text-white/90">Data & Settings</h3>
-            </div>
-            <span
-              aria-hidden="true"
-              className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
-                openSections.step1 ? 'rotate-0' : '-rotate-90'
-              }`}
-            >
-              ▼
-            </span>
-          </button>
+          />
 
           {openSections.step1 && (
             <div className="space-y-4">
@@ -481,24 +316,13 @@ export function LeftControlPanel({
         </section>
 
         <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
-          <button
-            type="button"
+          <SectionToggle
+            step={2}
+            title="Integration"
+            open={openSections.step2}
+            badgeClassName="from-amber-500 to-orange-600 shadow-amber-500/30"
             onClick={() => toggleSection('step2', currentStep < 2)}
-            className="mb-5 flex w-full items-center justify-between gap-3 border-t border-white/[0.04] pt-8 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-xs font-bold text-white shadow-lg shadow-amber-500/30">2</span>
-              <h3 className="text-sm font-semibold tracking-wide text-white/90">Integration</h3>
-            </div>
-            <span
-              aria-hidden="true"
-              className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
-                openSections.step2 ? 'rotate-0' : '-rotate-90'
-              }`}
-            >
-              ▼
-            </span>
-          </button>
+          />
 
           {openSections.step2 && (
             <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 backdrop-blur-md">
@@ -549,24 +373,13 @@ export function LeftControlPanel({
         </section>
 
         <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
-          <button
-            type="button"
+          <SectionToggle
+            step={3}
+            title="Kinetics Fitting"
+            open={openSections.step3}
+            badgeClassName="from-purple-500 to-fuchsia-600 shadow-purple-500/30"
             onClick={() => toggleSection('step3', currentStep < 2)}
-            className="mb-5 flex w-full items-center justify-between gap-3 border-t border-white/[0.04] pt-8 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-600 text-xs font-bold text-white shadow-lg shadow-purple-500/30">3</span>
-              <h3 className="text-sm font-semibold tracking-wide text-white/90">Kinetics Fitting</h3>
-            </div>
-            <span
-              aria-hidden="true"
-              className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
-                openSections.step3 ? 'rotate-0' : '-rotate-90'
-              }`}
-            >
-              ▼
-            </span>
-          </button>
+          />
 
           {openSections.step3 && (
             <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
@@ -594,6 +407,12 @@ export function LeftControlPanel({
                     />
                   ))}
                 </div>
+                <ManualFitColorPicker
+                  colors={manualFitColorGrid}
+                  filenames={extractedFilenames}
+                  selectedColors={fitFileColors}
+                  onChange={onManualFitColorChange}
+                />
               </div>
 
               <FigurePanelCard
@@ -671,24 +490,13 @@ export function LeftControlPanel({
         </section>
 
         <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
-          <button
-            type="button"
+          <SectionToggle
+            step={4}
+            title="Spectral Figure"
+            open={openSections.step4}
+            badgeClassName="from-emerald-500 to-teal-600 shadow-emerald-500/30"
             onClick={() => toggleSection('step4', currentStep < 2)}
-            className="mb-5 flex w-full items-center justify-between gap-3 border-t border-white/[0.04] pt-8 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white shadow-lg shadow-emerald-500/30">4</span>
-              <h3 className="text-sm font-semibold tracking-wide text-white/90">Spectral Figure</h3>
-            </div>
-            <span
-              aria-hidden="true"
-              className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
-                openSections.step4 ? 'rotate-0' : '-rotate-90'
-              }`}
-            >
-              ▼
-            </span>
-          </button>
+          />
 
           {openSections.step4 && (
             <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
@@ -716,24 +524,13 @@ export function LeftControlPanel({
         </section>
 
         <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
-          <button
-            type="button"
+          <SectionToggle
+            step={5}
+            title="Image Parameters"
+            open={openSections.step5}
+            badgeClassName="from-sky-500 to-cyan-600 shadow-sky-500/30"
             onClick={() => toggleSection('step5', currentStep < 2)}
-            className="mb-5 flex w-full items-center justify-between gap-3 border-t border-white/[0.04] pt-8 text-left"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-cyan-600 text-xs font-bold text-white shadow-lg shadow-sky-500/30">5</span>
-              <h3 className="text-sm font-semibold tracking-wide text-white/90">Image Parameters</h3>
-            </div>
-            <span
-              aria-hidden="true"
-              className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
-                openSections.step5 ? 'rotate-0' : '-rotate-90'
-              }`}
-            >
-              ▼
-            </span>
-          </button>
+          />
 
           {openSections.step5 && (
             <GlobalImageSettingsCard

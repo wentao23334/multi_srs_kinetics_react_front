@@ -1,5 +1,12 @@
-import type { FigureSettingsState, FitOutcome, NumericRange } from '../types/workflow';
-import type { FitParams, GetDatasetResponse } from '../types/api';
+import type {
+  FitFigureUrlsState,
+  FigureSettingsState,
+  FitOutcome,
+  FitResultMap,
+  IntegrationCacheEntry,
+  NumericRange,
+} from '../types/workflow';
+import type { FitKineticsRequest, FitKineticsResponse, FitParams, GetDatasetResponse } from '../types/api';
 
 const colorScales: Record<string, string[]> = {
   None: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
@@ -23,6 +30,7 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
     reverseWavenumberAxis: false,
   },
   colorScheme: 'RdBu_r',
+  manualColors: {},
   overlay: {
     xlabel: 'Time (s)',
     ylabel: 'Peak Area (a.u.)',
@@ -48,6 +56,47 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
     zRangeInput: '',
   },
 };
+
+export function emptyFitFigureUrls(): FitFigureUrlsState {
+  return {
+    overlay: '',
+    normalized: '',
+    spectral: '',
+    spectralHeatmap: '',
+  };
+}
+
+export function hasRenderedFitFigures(urls: FitFigureUrlsState) {
+  return Boolean(urls.overlay || urls.normalized);
+}
+
+export function clearFitComparisonUrls(urls: FitFigureUrlsState): FitFigureUrlsState {
+  return { ...urls, overlay: '', normalized: '' };
+}
+
+export function withFitComparisonUrls(
+  urls: FitFigureUrlsState,
+  overlay: string,
+  normalized: string,
+): FitFigureUrlsState {
+  return { ...urls, overlay, normalized };
+}
+
+export function withSpectralFigureUrls(
+  urls: FitFigureUrlsState,
+  spectral: string,
+  spectralHeatmap: string,
+): FitFigureUrlsState {
+  return { ...urls, spectral, spectralHeatmap };
+}
+
+export function buildFitSummaryMessage(successCount: number, failureCount: number) {
+  if (successCount === 0) return 'No successful fit image available.';
+  if (failureCount === 0) {
+    return `Completed fits for ${successCount} file(s). Overlay and normalized comparison are shown on the right.`;
+  }
+  return `Completed fits for ${successCount} file(s); ${failureCount} file(s) need attention.`;
+}
 
 export interface WaterfallTracePayload {
   x: number[];
@@ -122,7 +171,7 @@ export function parseRangeInput(value: string) {
     : { start: parts[1], end: parts[0] };
 }
 
-export function parseOffsetInput(value: string) {
+export function parseOffsetInput(value: string): [number, number] {
   const text = String(value || '').trim();
   if (!text) return [0, 0] as [number, number];
   const parts = text.split(',').map((item) => Number(item.trim()));
@@ -161,10 +210,9 @@ function interpolateColor(startHex: string, endHex: string, t: number) {
   });
 }
 
-export function sampleColors(scaleName: string, count: number) {
+function sampleInterpolatedColors(scaleName: string, count: number) {
   const anchors = colorScales[scaleName] || colorScales.None;
   if (count <= 1) return [anchors[0]];
-  if (scaleName === 'None') return anchors.slice(0, count);
 
   const output: string[] = [];
   const segments = anchors.length - 1;
@@ -175,6 +223,113 @@ export function sampleColors(scaleName: string, count: number) {
     output.push(interpolateColor(anchors[left], anchors[left + 1], localT));
   }
   return output;
+}
+
+export function sampleColors(scaleName: string, count: number) {
+  const anchors = colorScales[scaleName] || colorScales.None;
+  if (count <= 1) return [anchors[0]];
+  if (scaleName === 'None') return anchors.slice(0, count);
+  return sampleInterpolatedColors(scaleName, count);
+}
+
+function colorKey(color: string) {
+  return String(color || '').trim().toLowerCase();
+}
+
+function colorDistanceSquared(aHex: string, bHex: string) {
+  const a = hexToRgb(aHex);
+  const b = hexToRgb(bHex);
+  return (a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2;
+}
+
+function findNearestScalePosition(scaleName: string, color: string) {
+  const samples = sampleInterpolatedColors(scaleName, 512);
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  samples.forEach((sample, index) => {
+    const distance = colorDistanceSquared(sample, color);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex / Math.max(1, samples.length - 1);
+}
+
+function findNearestReplaceIndex(
+  entries: Array<{ locked: boolean }>,
+  targetIndex: number,
+) {
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  entries.forEach((entry, index) => {
+    if (entry.locked) return;
+    const distance = Math.abs(index - targetIndex);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+export function buildManualColorGrid(
+  scaleName: string,
+  selectedColors: string[],
+  count = 64,
+) {
+  const safeCount = Math.max(1, count);
+  const baseColors = sampleInterpolatedColors(scaleName || 'None', safeCount);
+  const entries = baseColors.map((color, index) => ({
+    color,
+    position: index / Math.max(1, baseColors.length - 1),
+    locked: false,
+  }));
+
+  const selectedKeys = new Set<string>();
+  selectedColors.forEach((selectedColor) => {
+    const selectedKey = colorKey(selectedColor);
+    if (!selectedKey || selectedKeys.has(selectedKey)) return;
+    selectedKeys.add(selectedKey);
+
+    const existingIndex = entries.findIndex((entry) => colorKey(entry.color) === selectedKey);
+    if (existingIndex >= 0) {
+      entries[existingIndex].locked = true;
+      return;
+    }
+
+    const position = findNearestScalePosition(scaleName || 'None', selectedColor);
+    const targetIndex = Math.round(position * Math.max(1, entries.length - 1));
+    const replaceIndex = findNearestReplaceIndex(entries, targetIndex);
+    entries[replaceIndex] = {
+      color: selectedColor,
+      position,
+      locked: true,
+    };
+  });
+
+  entries.sort((a, b) => a.position - b.position);
+
+  const output: string[] = [];
+  const outputKeys = new Set<string>();
+  entries.forEach((entry) => {
+    const key = colorKey(entry.color);
+    if (!key || outputKeys.has(key)) return;
+    outputKeys.add(key);
+    output.push(entry.color);
+  });
+
+  if (output.length < safeCount) {
+    sampleInterpolatedColors(scaleName || 'None', safeCount * 2).forEach((color) => {
+      if (output.length >= safeCount) return;
+      const key = colorKey(color);
+      if (outputKeys.has(key)) return;
+      outputKeys.add(key);
+      output.push(color);
+    });
+  }
+
+  return output.slice(0, safeCount);
 }
 
 export function getSortedTimeAxis(time: number[]) {
@@ -315,26 +470,89 @@ export function buildSuccessfulSeriesPayload(
   }));
 }
 
-export function summarizeFitResults(fitResults: Record<string, FitOutcome>, extractedFilenames: string[]) {
-  const summary: Record<string, unknown> = {};
-  extractedFilenames.forEach((filename) => {
-    const result = fitResults[filename];
-    if (!result) {
-      summary[filename] = null;
-      return;
+export interface SuccessfulFitSeriesInput {
+  filename: string;
+  full_time: number[];
+  full_areas: number[];
+  x_fit: number[];
+  y_fit: number[];
+  x_raw: number[];
+  y_raw: number[];
+  y_fit_norm: number[];
+}
+
+export async function runFitsForFiles({
+  filenames,
+  fitRanges,
+  integrateFile,
+  fitKinetics,
+  getErrorMessage,
+}: {
+  filenames: string[];
+  fitRanges: Record<string, NumericRange>;
+  integrateFile: (filename: string) => Promise<IntegrationCacheEntry>;
+  fitKinetics: (payload: FitKineticsRequest) => Promise<FitKineticsResponse>;
+  getErrorMessage: (error: unknown, fallback: string) => string;
+}) {
+  const results: FitResultMap = {};
+  const series: SuccessfulFitSeriesInput[] = [];
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (const filename of filenames) {
+    try {
+      const integrationBody = await integrateFile(filename);
+      const timeMin = Math.min(...integrationBody.time);
+      const timeMax = Math.max(...integrationBody.time);
+      const fitRange = fitRanges[filename] ?? { start: timeMin, end: timeMax };
+
+      const xSelected: number[] = [];
+      const ySelected: number[] = [];
+      for (let i = 0; i < integrationBody.time.length; i += 1) {
+        const timeValue = integrationBody.time[i];
+        if (timeValue >= fitRange.start && timeValue <= fitRange.end) {
+          xSelected.push(timeValue);
+          ySelected.push(integrationBody.areas[i]);
+        }
+      }
+
+      if (xSelected.length < 4) {
+        results[filename] = {
+          error: 'Not enough points inside the fit range (need at least 4).',
+        };
+        failureCount += 1;
+        continue;
+      }
+
+      const fitBody = await fitKinetics({ x: xSelected, y: ySelected });
+      const normalized = normalizeSeriesPair(ySelected, fitBody.y_fit, fitBody.params);
+      results[filename] = {
+        filename,
+        fit_range: [fitRange.start, fitRange.end],
+        points_used: xSelected.length,
+        params: fitBody.params,
+        metrics: fitBody.metrics,
+        ci95: fitBody.ci95,
+        integration_window: integrationBody.window,
+      };
+      series.push({
+        filename,
+        full_time: integrationBody.time,
+        full_areas: integrationBody.areas,
+        x_fit: fitBody.x_sorted,
+        y_fit: fitBody.y_fit,
+        x_raw: xSelected,
+        y_raw: normalized.raw,
+        y_fit_norm: normalized.fit,
+      });
+      successCount += 1;
+    } catch (error) {
+      results[filename] = {
+        error: getErrorMessage(error, 'Unknown fit error'),
+      };
+      failureCount += 1;
     }
-    if (isFitError(result)) {
-      summary[filename] = { error: result.error };
-      return;
-    }
-    summary[filename] = {
-      fit_range: result.fit_range,
-      points_used: result.points_used,
-      params: result.params,
-      metrics: result.metrics,
-      ci95: result.ci95,
-      integration_window: result.integration_window,
-    };
-  });
-  return summary;
+  }
+
+  return { results, series, successCount, failureCount };
 }

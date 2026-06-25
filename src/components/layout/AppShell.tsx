@@ -1,34 +1,34 @@
-import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { toast } from 'sonner';
-import { apiClient } from '../../lib/apiClient';
 import {
+  buildManualColorGrid,
+  buildFitSummaryMessage,
+  clearFitComparisonUrls,
+  emptyFitFigureUrls,
   buildWaterfallTracePayload,
   buildSuccessfulSeriesPayload,
   formatRangeInput,
   getSnappedRange,
+  hasRenderedFitFigures,
   isFitError,
-  normalizeSeriesPair,
   resolveHeatmapColorScale,
+  runFitsForFiles,
   sampleColors,
-  summarizeFitResults,
+  withFitComparisonUrls,
+  withSpectralFigureUrls,
 } from '../../lib/workflowUtils';
+import { buildCurrentRunRecordSnapshot, buildInitialRunRecordSnapshot } from '../../lib/runRecordUtils';
+import { getErrorMessage, workflowApi } from '../../lib/workflowApi';
+import { useDatasetWorkflow } from '../../hooks/useDatasetWorkflow';
+import { useExtractionSource } from '../../hooks/useExtractionSource';
 import { useFigureSettings } from '../../hooks/useFigureSettings';
+import { useResizablePanes, type ResizeSide } from '../../hooks/useResizablePanes';
 import { useRunRecord } from '../../hooks/useRunRecord';
 import type {
-  ExtractAllResponse,
-  GetDatasetResponse,
-  IntegrateResponse,
-  RenderFitFiguresResponse,
-  RenderSpectralFigureResponse,
-} from '../../types/api';
-import type {
-  DatasetCache,
-  FitRangeMap,
+  FigureSettingsState,
+  FitFigureUrlsState,
   FitResultMap,
   GlobalImageSettings,
-  IntegrationCache,
-  IntegrationCacheEntry,
   NumericRange,
   RunRecordSnapshot,
   SpectralFigureSettings,
@@ -38,29 +38,8 @@ import { LeftControlPanel } from './LeftControlPanel';
 import { MainWorkspace } from './MainWorkspace';
 import { RightPreviewPanel } from './RightPreviewPanel';
 
-const LAYOUT_STORAGE_KEY = 'multi-srs-layout-widths';
-const LEFT_PANEL_DEFAULT = 336;
-const RIGHT_PANEL_DEFAULT = 320;
-const LEFT_PANEL_MIN = 296;
-const LEFT_PANEL_MAX = 460;
-const RIGHT_PANEL_MIN = 288;
-const RIGHT_PANEL_MAX = 420;
-const RESIZE_HANDLE_WIDTH = 12;
-const DATASET_CACHE_LIMIT = 2;
-const INTEGRATION_CACHE_LIMIT = 3;
-
-function upsertLimitedCache<T>(prev: Record<string, T>, key: string, value: T, limit: number) {
-  const next = { ...prev };
-  delete next[key];
-  next[key] = value;
-  const keys = Object.keys(next);
-  while (keys.length > limit) {
-    const oldestKey = keys.shift();
-    if (!oldestKey) break;
-    delete next[oldestKey];
-  }
-  return next;
-}
+const INITIAL_FIT_SUMMARY_MESSAGE = 'Set fit ranges in Step 3, then run fitting for all selected files.';
+const INITIAL_SPECTRAL_STATUS = 'Render the active waterfall view to generate a publication-style spectral figure.';
 
 function resolveOptionalCropRange(
   cropStartInput: string,
@@ -78,83 +57,15 @@ function resolveOptionalCropRange(
   return start <= end ? [start, end] : [end, start];
 }
 
-function getErrorMessage(error: unknown, fallback: string) {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === 'string' && detail.trim()) return detail;
-    if (error.message) return error.message;
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
+function colorKey(color: string) {
+  return String(color || '').trim().toLowerCase();
 }
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function getMinimumMainWidth(containerWidth: number) {
-  return Math.min(820, Math.max(480, containerWidth - LEFT_PANEL_MIN - RIGHT_PANEL_MIN - RESIZE_HANDLE_WIDTH * 2));
-}
-
-function clampPaneWidths(containerWidth: number, left: number, right: number) {
-  const minMainWidth = getMinimumMainWidth(containerWidth);
-  const maxRightForLeftMin = containerWidth - RESIZE_HANDLE_WIDTH * 2 - LEFT_PANEL_MIN - minMainWidth;
-  const nextRight = clamp(
-    right,
-    RIGHT_PANEL_MIN,
-    Math.max(RIGHT_PANEL_MIN, Math.min(RIGHT_PANEL_MAX, maxRightForLeftMin)),
-  );
-
-  const maxLeft = containerWidth - RESIZE_HANDLE_WIDTH * 2 - nextRight - minMainWidth;
-  const nextLeft = clamp(
-    left,
-    LEFT_PANEL_MIN,
-    Math.max(LEFT_PANEL_MIN, Math.min(LEFT_PANEL_MAX, maxLeft)),
-  );
-
-  const maxRight = containerWidth - RESIZE_HANDLE_WIDTH * 2 - nextLeft - minMainWidth;
-  return {
-    left: nextLeft,
-    right: clamp(
-      nextRight,
-      RIGHT_PANEL_MIN,
-      Math.max(RIGHT_PANEL_MIN, Math.min(RIGHT_PANEL_MAX, maxRight)),
-    ),
-  };
-}
-
-function readStoredPaneWidths() {
-  if (typeof window === 'undefined') {
-    return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (!raw) return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
-    const parsed = JSON.parse(raw);
-    if (typeof parsed?.left === 'number' && typeof parsed?.right === 'number') {
-      return { left: parsed.left, right: parsed.right };
-    }
-  } catch {
-    // Ignore invalid persisted layout state.
-  }
-
-  return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
-}
-
-type ResizeSide = 'left' | 'right';
-
-type FitFigureUrlsState = {
-  overlay: string;
-  normalized: string;
-  spectral: string;
-  spectralHeatmap: string;
-};
 
 type RunRecordSnapshotOverrides = {
   fitFigureUrls?: FitFigureUrlsState;
   fitFiguresStale?: boolean;
   fitResults?: FitResultMap;
+  figureSettings?: FigureSettingsState;
   keepRecord?: boolean;
 };
 
@@ -194,27 +105,15 @@ function ResizeHandle({
 }
 
 export function AppShell() {
-  const layoutRef = useRef<HTMLDivElement | null>(null);
   const { queueSave } = useRunRecord();
+  const { layoutRef, paneWidths, draggingSide, handleResizeStart } = useResizablePanes();
   const unloadActionRef = useRef<string>('');
   const isEditingWaterfallTimeRangeRef = useRef(false);
-  const dragRef = useRef<{
-    side: ResizeSide;
-    startX: number;
-    startLeft: number;
-    startRight: number;
-  } | null>(null);
+  const waterfallLoadSeqRef = useRef(0);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [keepRecord, setKeepRecord] = useState(false);
-  const [draggingSide, setDraggingSide] = useState<ResizeSide | null>(null);
-  const [paneWidths, setPaneWidths] = useState(readStoredPaneWidths);
 
-  const [folderInput, setFolderInput] = useState('');
-  const [currentFolderPath, setCurrentFolderPath] = useState('');
-  const [foundSrsFiles, setFoundSrsFiles] = useState<string[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [applyFolderPending, setApplyFolderPending] = useState(false);
   const [extractPending, setExtractPending] = useState(false);
 
   const [mode, setMode] = useState<'fast' | 'realtime'>('realtime');
@@ -225,12 +124,6 @@ export function AppShell() {
 
   const [runId, setRunId] = useState('');
   const [extractedFilenames, setExtractedFilenames] = useState<string[]>([]);
-  const [activeWaterfallFile, setActiveWaterfallFile] = useState<string | null>(null);
-  const [activeKineticsFile, setActiveKineticsFile] = useState<string | null>(null);
-  const [currentDataset, setCurrentDataset] = useState<GetDatasetResponse | null>(null);
-  const [datasetCache, setDatasetCache] = useState<DatasetCache>({});
-  const [integrationCache, setIntegrationCache] = useState<IntegrationCache>({});
-  const [fitRanges, setFitRanges] = useState<FitRangeMap>({});
   const [waterfallTimeRanges, setWaterfallTimeRanges] = useState<WaterfallRangeMap>({});
 
   const [globalIntegrationRange, setGlobalIntegrationRange] = useState<[number, number]>([1150, 4000]);
@@ -242,21 +135,12 @@ export function AppShell() {
   const [waterfallColorScheme, setWaterfallColorScheme] = useState('RdBu_r');
 
   const [fitResults, setFitResults] = useState<FitResultMap>({});
-  const [fitFigureUrls, setFitFigureUrls] = useState<FitFigureUrlsState>({
-    overlay: '',
-    normalized: '',
-    spectral: '',
-    spectralHeatmap: '',
-  });
+  const [fitFigureUrls, setFitFigureUrls] = useState<FitFigureUrlsState>(emptyFitFigureUrls);
   const [fitFiguresStale, setFitFiguresStale] = useState(false);
-  const [fitSummaryMsg, setFitSummaryMsg] = useState(
-    'Set fit ranges in Step 3, then run fitting for all selected files.',
-  );
+  const [fitSummaryMsg, setFitSummaryMsg] = useState(INITIAL_FIT_SUMMARY_MESSAGE);
   const [runFitsPending, setRunFitsPending] = useState(false);
   const [spectralFigurePending, setSpectralFigurePending] = useState(false);
-  const [spectralFigureStatus, setSpectralFigureStatus] = useState(
-    'Render the active waterfall view to generate a publication-style spectral figure.',
-  );
+  const [spectralFigureStatus, setSpectralFigureStatus] = useState(INITIAL_SPECTRAL_STATUS);
   const [vizStatusMsg, setVizStatusMsg] = useState('Extract files to begin.');
 
   // Derive getFileColor early so useFigureSettings can close over it.
@@ -264,6 +148,35 @@ export function AppShell() {
   // To break the circular dependency we capture a stable ref updated by the hook.
   const getFileColorRef = useRef<(filename: string) => string>(() => '#1f77b4');
   const getFileColor = (filename: string) => getFileColorRef.current(filename);
+
+  const {
+    activeWaterfallFile,
+    setActiveWaterfallFile,
+    activeKineticsFile,
+    setActiveKineticsFile,
+    currentDataset,
+    setCurrentDataset,
+    integrationCache,
+    fitRanges,
+    setFitRanges,
+    clearDatasetWorkflow,
+    clearIntegrationWorkflow,
+    resetForExtractedFiles,
+    fetchDataset,
+    integrateDatasetForFile,
+  } = useDatasetWorkflow();
+
+  const {
+    folderInput,
+    setFolderInput,
+    currentFolderPath,
+    foundSrsFiles,
+    selectedFiles,
+    applyFolderPending,
+    applyFolder,
+    selectAllFiles,
+    toggleSelectedFile,
+  } = useExtractionSource();
 
   const successfulFits = useMemo(
     () => extractedFilenames.filter((filename) => fitResults[filename] && !isFitError(fitResults[filename])),
@@ -307,23 +220,40 @@ export function AppShell() {
 
   const {
     figureSettings,
+    setFigureSettings,
     buildFigureRenderSettings,
     handleGlobalImageSettingChange,
     handleFigurePanelChange,
-    handleFigureColorSchemeChange,
     handleSpectralFigureChange,
   } = useFigureSettings();
 
-  // Keep the ref implementation fresh every render so that useFigureSettings
-  // and runAllFits always use the current colorScheme and extractedFilenames.
-  getFileColorRef.current = (filename: string) => {
+  const getAutomaticFileColor = (
+    filename: string,
+    settings: FigureSettingsState = figureSettings,
+  ) => {
     const idx = Math.max(0, extractedFilenames.indexOf(filename));
     const palette = sampleColors(
-      figureSettings.colorScheme || 'None',
+      settings.colorScheme || 'None',
       Math.max(extractedFilenames.length, 1),
     );
     return palette[idx % palette.length];
   };
+
+  const getResolvedFileColor = (
+    filename: string,
+    settings: FigureSettingsState = figureSettings,
+  ) => settings.manualColors?.[filename] || getAutomaticFileColor(filename, settings);
+
+  // Keep the ref implementation fresh every render so runAllFits uses the
+  // current automatic palette plus any manual per-file overrides.
+  getFileColorRef.current = (filename: string) => getResolvedFileColor(filename);
+
+  const fitFileColors = extractedFilenames.map((filename) => getResolvedFileColor(filename));
+  const manualFitColorGrid = buildManualColorGrid(
+    figureSettings.colorScheme || 'None',
+    fitFileColors,
+    64,
+  );
 
   const currentDatasetFilename = currentDataset?.filename || null;
 
@@ -333,57 +263,33 @@ export function AppShell() {
     const snapshotFitFigureUrls = overrides.fitFigureUrls ?? fitFigureUrls;
     const snapshotFitFiguresStale = overrides.fitFiguresStale ?? fitFiguresStale;
     const snapshotFitResults = overrides.fitResults ?? fitResults;
+    const snapshotFigureSettings = overrides.figureSettings ?? figureSettings;
     const snapshotKeepRecord = overrides.keepRecord ?? keepRecord;
 
-    return {
-      updated_at: new Date().toISOString(),
-      keep_record: snapshotKeepRecord,
-      source_folder: currentFolderPath,
-      selected_files: [...selectedFiles],
-      extracted_files: [...extractedFilenames],
-      settings: {
-        extraction: {
-          mode,
-          start_wn: defaultStartWn,
-          end_wn: defaultEndWn,
-          crop_start_wn: analysisCropRange ? analysisCropRange[0] : null,
-          crop_end_wn: analysisCropRange ? analysisCropRange[1] : null,
-        },
-        integration: {
-          start_wn: globalIntegrationRange[0],
-          end_wn: globalIntegrationRange[1],
-          baseline_mode: baselineMode,
-        },
-        waterfall: {
-          gap: waterfallGap,
-          max_lines: waterfallMaxLines,
-          time_range:
-            activeWaterfallFile && waterfallTimeRanges[activeWaterfallFile]
-              ? waterfallTimeRanges[activeWaterfallFile]
-              : null,
-          color_scheme: waterfallColorScheme,
-        },
-        figure_render: figureSettings,
-        fit_ranges: fitRanges,
-      },
-      active_views: {
-        spectra_filename: currentDatasetFilename,
-        kinetics_filename: activeKineticsFile,
-      },
-      artifacts: {
-        overlay_image:
-          !snapshotFitFiguresStale && snapshotFitFigureUrls.overlay ? 'fit_overlay.png' : null,
-        normalized_image:
-          !snapshotFitFiguresStale && snapshotFitFigureUrls.normalized
-            ? 'fit_normalized.png'
-            : null,
-        spectral_image: snapshotFitFigureUrls.spectral ? 'spectral_waterfall.png' : null,
-        spectral_heatmap_image: snapshotFitFigureUrls.spectralHeatmap
-          ? 'spectral_heatmap.png'
-          : null,
-      },
-      fit_results: summarizeFitResults(snapshotFitResults, extractedFilenames),
-    };
+    return buildCurrentRunRecordSnapshot({
+      keepRecord: snapshotKeepRecord,
+      sourceFolder: currentFolderPath,
+      selectedFiles,
+      extractedFilenames,
+      mode,
+      defaultStartWn,
+      defaultEndWn,
+      analysisCropRange,
+      globalIntegrationRange,
+      baselineMode,
+      waterfallGap,
+      waterfallMaxLines,
+      activeWaterfallFile,
+      waterfallTimeRanges,
+      waterfallColorScheme,
+      figureSettings: snapshotFigureSettings,
+      fitRanges,
+      currentDatasetFilename,
+      activeKineticsFile,
+      fitFigureUrls: snapshotFitFigureUrls,
+      fitFiguresStale: snapshotFitFiguresStale,
+      fitResults: snapshotFitResults,
+    });
   }, [
     activeKineticsFile,
     activeWaterfallFile,
@@ -416,25 +322,59 @@ export function AppShell() {
 
   const clearRenderedFigures = (
     message = 'Run fitting to generate result images.',
-    spectralMessage = 'Render the active waterfall view to generate a publication-style spectral figure.',
+    spectralMessage = INITIAL_SPECTRAL_STATUS,
   ) => {
-    setFitFigureUrls({ overlay: '', normalized: '', spectral: '', spectralHeatmap: '' });
+    setFitFigureUrls(emptyFitFigureUrls());
     setFitFiguresStale(false);
     setFitSummaryMsg(message);
     setSpectralFigureStatus(spectralMessage);
   };
 
+  const applyExtractedRunState = (
+    nextRunId: string,
+    nextKeepRecord: boolean,
+    succeededFilenames: string[],
+    nextFigureSettings: FigureSettingsState,
+  ) => {
+    setRunId(nextRunId);
+    setKeepRecord(nextKeepRecord);
+    setFigureSettings(nextFigureSettings);
+    setExtractedFilenames(succeededFilenames);
+    resetForExtractedFiles(succeededFilenames);
+    setWaterfallTimeRanges({});
+    setFitResults({});
+    clearRenderedFigures(INITIAL_FIT_SUMMARY_MESSAGE, INITIAL_SPECTRAL_STATUS);
+    setCurrentStep(succeededFilenames.length ? 2 : 1);
+    setGlobalIntegrationRange([defaultStartWn, defaultEndWn]);
+    setBaselineMode('linear');
+    setWaterfallTimeRangeInput('');
+    setWaterfallAppliedTimeRangeInput('');
+  };
+
   const markFitsStale = (
     message = 'Fit ranges changed. Run fitting again to refresh the right-hand results.',
   ) => {
-    const hasRenderedFitFigures = Boolean(fitFigureUrls.overlay || fitFigureUrls.normalized);
+    const nextFitFiguresStale = hasRenderedFitFigures(fitFigureUrls);
     const nextFitResults: FitResultMap = {};
     setFitResults(nextFitResults);
-    setFitFiguresStale(hasRenderedFitFigures);
+    setFitFiguresStale(nextFitFiguresStale);
     setFitSummaryMsg(message);
     void saveRunRecord({
-      fitFiguresStale: hasRenderedFitFigures,
+      fitFiguresStale: nextFitFiguresStale,
       fitResults: nextFitResults,
+    });
+  };
+
+  const markFitFiguresStaleOnly = (
+    message = 'Fit figure settings changed. Click Run All Fits to refresh the right-hand images.',
+    nextFigureSettings?: FigureSettingsState,
+  ) => {
+    const nextFitFiguresStale = hasRenderedFitFigures(fitFigureUrls);
+    setFitFiguresStale(nextFitFiguresStale);
+    setFitSummaryMsg(message);
+    void saveRunRecord({
+      fitFiguresStale: nextFitFiguresStale,
+      figureSettings: nextFigureSettings,
     });
   };
 
@@ -449,59 +389,16 @@ export function AppShell() {
   const cleanupRun = async (targetRunId: string) => {
     if (!targetRunId) return;
     try {
-      await apiClient.post('/cleanup', { run_id: targetRunId });
+      await workflowApi.cleanupRun({ run_id: targetRunId });
     } catch {
       // Ignore cleanup failures for temp runs.
     }
   };
 
-  const fetchDataset = async (filename: string, targetRunId = runId) => {
-    if (!targetRunId) throw new Error('run_id is missing');
-    if (datasetCache[filename]) return datasetCache[filename];
-
-      const response = await apiClient.post<GetDatasetResponse>('/get_dataset', {
-        run_id: targetRunId,
-        filename,
-        crop_range: analysisCropRange,
-      });
-    const body = response.data;
-    setDatasetCache((prev) => upsertLimitedCache(prev, filename, body, DATASET_CACHE_LIMIT));
-    return body;
-  };
-
-  const integrateDatasetForFile = async (
-    filename: string,
-    force = false,
-    targetRunId = runId,
-  ) => {
-    if (!targetRunId) throw new Error('run_id is missing');
-    if (!force && integrationCache[filename]) return integrationCache[filename];
-
-    const response = await apiClient.post<IntegrateResponse>('/integrate', {
-      run_id: targetRunId,
-      filename,
-      start: globalIntegrationRange[0],
-      end: globalIntegrationRange[1],
-      baseline_mode: baselineMode,
-      crop_range: analysisCropRange,
-    });
-    const entry: IntegrationCacheEntry = { ...response.data, filename };
-    setIntegrationCache((prev) => upsertLimitedCache(prev, filename, entry, INTEGRATION_CACHE_LIMIT));
-
-    const axis = Array.from(new Set(entry.time.slice().sort((a, b) => a - b)));
-    setFitRanges((prev) => {
-      const next = prev[filename] ?? {
-        start: axis[0],
-        end: axis[axis.length - 1],
-      };
-      return { ...prev, [filename]: next };
-    });
-
-    return entry;
-  };
-
-  const selectWaterfallFile = async (filename: string, targetRunId = runId) => {
+  const selectWaterfallFile = async (filename: string, targetRunId = runId, force = false) => {
     if (!targetRunId) return;
+    const loadSeq = waterfallLoadSeqRef.current + 1;
+    waterfallLoadSeqRef.current = loadSeq;
     setActiveWaterfallFile(filename);
     setVizStatusMsg(`Loading ${filename}…`);
     markSpectralFigureStale(
@@ -509,7 +406,8 @@ export function AppShell() {
     );
 
     try {
-      const body = await fetchDataset(filename, targetRunId);
+      const body = await fetchDataset(filename, targetRunId, analysisCropRange, force);
+      if (loadSeq !== waterfallLoadSeqRef.current) return;
       setCurrentDataset(body);
 
       if (waterfallGap === 0) {
@@ -528,6 +426,7 @@ export function AppShell() {
 
       setVizStatusMsg(`Showing: ${filename}`);
     } catch (error) {
+      if (loadSeq !== waterfallLoadSeqRef.current) return;
       setVizStatusMsg(`Error loading ${filename}: ${getErrorMessage(error, 'load failed')}`);
       toast.error(getErrorMessage(error, `Failed to load ${filename}`));
     }
@@ -541,31 +440,25 @@ export function AppShell() {
     if (!targetRunId) return;
     setActiveKineticsFile(filename);
     try {
-      await integrateDatasetForFile(filename, force, targetRunId);
+      await integrateDatasetForFile({
+        filename,
+        force,
+        targetRunId,
+        integrationRange: globalIntegrationRange,
+        baselineMode,
+        cropRange: analysisCropRange,
+      });
     } catch (error) {
       toast.error(getErrorMessage(error, `Failed to integrate ${filename}`));
     }
   };
 
   const handleApplyFolder = async () => {
-    if (!folderInput.trim()) {
-      toast.error('Please enter a valid folder path.');
-      return;
-    }
-
-    setApplyFolderPending(true);
     try {
-      const response = await apiClient.post<{ folder_path: string; files: string[] }>('/list_folder', {
-        folder_path: folderInput.trim(),
-      });
-      setCurrentFolderPath(response.data.folder_path);
-      setFoundSrsFiles(response.data.files);
-      setSelectedFiles([]);
-      toast.success(`Found ${response.data.files.length} SRS files.`);
+      const body = await applyFolder();
+      toast.success(`Found ${body.files.length} SRS files.`);
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to scan folder'));
-    } finally {
-      setApplyFolderPending(false);
     }
   };
 
@@ -583,7 +476,7 @@ export function AppShell() {
     setWaterfallGap(0);
 
     try {
-      const response = await apiClient.post<ExtractAllResponse>('/extract_all', {
+      const body = await workflowApi.extractAll({
         folder_path: currentFolderPath,
         files: selectedFiles,
         mode,
@@ -591,40 +484,29 @@ export function AppShell() {
         end: defaultEndWn,
         keep_record: keepRecord,
       });
-      const body = response.data;
 
       if (previousRunId && !previousKeepRecord) {
         void cleanupRun(previousRunId);
       }
 
       const nextRunId = body.run_id;
-      setRunId(nextRunId);
-      setKeepRecord(Boolean(body.keep_record));
-      setExtractedFilenames(body.succeeded);
-      setDatasetCache({});
-      setIntegrationCache({});
-      setFitRanges({});
-      setWaterfallTimeRanges({});
-      setFitResults({});
-      clearRenderedFigures(
-        'Set fit ranges in Step 3, then run fitting for all selected files.',
-        'Render the active waterfall view to generate a publication-style spectral figure.',
+      const nextFigureSettings: FigureSettingsState = {
+        ...figureSettings,
+        manualColors: {},
+      };
+      applyExtractedRunState(
+        nextRunId,
+        Boolean(body.keep_record),
+        body.succeeded,
+        nextFigureSettings,
       );
-      setCurrentDataset(null);
-      setActiveWaterfallFile(body.succeeded[0] ?? null);
-      setActiveKineticsFile(body.succeeded[0] ?? null);
-      setCurrentStep(body.succeeded.length ? 2 : 1);
-      setGlobalIntegrationRange([defaultStartWn, defaultEndWn]);
-      setBaselineMode('linear');
-      setWaterfallTimeRangeInput('');
-      setWaterfallAppliedTimeRangeInput('');
 
       if (body.failed && Object.keys(body.failed).length > 0) {
         toast.warning(`Some files failed: ${Object.keys(body.failed).length}`);
       }
 
       if (body.succeeded.length) {
-        await selectWaterfallFile(body.succeeded[0], nextRunId);
+        await selectWaterfallFile(body.succeeded[0], nextRunId, true);
         await selectKineticsFile(body.succeeded[0], true, nextRunId);
       }
 
@@ -633,34 +515,22 @@ export function AppShell() {
       );
       toast.success(`Extracted ${body.succeeded.length} file(s).`);
       // Use queueSave manually here to guarantee nextRunId gets saved via snapshot
-      await queueSave(nextRunId, Boolean(body.keep_record), {
-        updated_at: new Date().toISOString(),
-        keep_record: Boolean(body.keep_record),
-        source_folder: currentFolderPath,
-        selected_files: [...selectedFiles],
-        extracted_files: [...body.succeeded],
-        settings: {
-          extraction: {
-            mode,
-            start_wn: defaultStartWn,
-            end_wn: defaultEndWn,
-            crop_start_wn: analysisCropRange ? analysisCropRange[0] : null,
-            crop_end_wn: analysisCropRange ? analysisCropRange[1] : null,
-          },
-          integration: { start_wn: defaultStartWn, end_wn: defaultEndWn, baseline_mode: 'linear' },
-          waterfall: { gap: 0, max_lines: waterfallMaxLines, time_range: null, color_scheme: 'RdBu_r' },
-          figure_render: figureSettings,
-          fit_ranges: {},
-        },
-        active_views: { spectra_filename: null, kinetics_filename: body.succeeded[0] ?? null },
-        artifacts: {
-          overlay_image: null,
-          normalized_image: null,
-          spectral_image: null,
-          spectral_heatmap_image: null,
-        },
-        fit_results: {},
-      });
+      await queueSave(
+        nextRunId,
+        Boolean(body.keep_record),
+        buildInitialRunRecordSnapshot({
+          keepRecord: Boolean(body.keep_record),
+          sourceFolder: currentFolderPath,
+          selectedFiles,
+          extractedFilenames: body.succeeded,
+          mode,
+          defaultStartWn,
+          defaultEndWn,
+          analysisCropRange,
+          waterfallMaxLines,
+          figureSettings: nextFigureSettings,
+        }),
+      );
     } catch (error) {
       toast.error(getErrorMessage(error, 'Extraction failed'));
       setVizStatusMsg(`Extraction error: ${getErrorMessage(error, 'Extraction failed')}`);
@@ -703,10 +573,7 @@ export function AppShell() {
       setCropEndWnInput(value);
     }
 
-    setDatasetCache({});
-    setIntegrationCache({});
-    setFitRanges({});
-    setCurrentDataset(null);
+    clearDatasetWorkflow();
     markFitsStale('Crop range changed. Run fitting again after re-integrating to refresh the right-hand results.');
     markSpectralFigureStale('Crop range changed. Render Spectral Figure again after reloading the dataset.');
   };
@@ -722,15 +589,20 @@ export function AppShell() {
     markFitsStale(
       'Integration settings changed. Run fitting again to refresh the right-hand results.',
     );
-    setIntegrationCache({});
-    setFitRanges({});
+    clearIntegrationWorkflow();
     await selectKineticsFile(targetFile, true);
   };
 
   const handleFitRangeChange = async (filename: string, range: NumericRange) => {
     let entry = integrationCache[filename];
     if (!entry) {
-      entry = await integrateDatasetForFile(filename, false);
+      entry = await integrateDatasetForFile({
+        filename,
+        targetRunId: runId,
+        integrationRange: globalIntegrationRange,
+        baselineMode,
+        cropRange: analysisCropRange,
+      });
     }
 
     const axis = Array.from(new Set(entry.time.slice().sort((a, b) => a - b)));
@@ -809,8 +681,48 @@ export function AppShell() {
   };
 
   const handleFitFigureColorSchemeChange = (value: string) => {
-    handleFigureColorSchemeChange(value);
-    markFitsStale('Fit figure settings changed. Click Run All Fits to refresh the right-hand images.');
+    const nextFigureSettings: FigureSettingsState = {
+      ...figureSettings,
+      colorScheme: value,
+      manualColors: {},
+    };
+    setFigureSettings(nextFigureSettings);
+    markFitFiguresStaleOnly(
+      'Fit figure colors changed. Click Run All Fits to refresh the right-hand images.',
+      nextFigureSettings,
+    );
+  };
+
+  const handleManualFitColorChange = (filename: string, color: string) => {
+    const targetKey = colorKey(color);
+    if (!filename || !targetKey) return;
+
+    const currentKey = colorKey(getResolvedFileColor(filename));
+    if (currentKey === targetKey) return;
+
+    const colorInUse = extractedFilenames.some(
+      (otherFilename) =>
+        otherFilename !== filename && colorKey(getResolvedFileColor(otherFilename)) === targetKey,
+    );
+    if (colorInUse) {
+      toast.info('That color is already assigned.');
+      return;
+    }
+
+    const nextManualColors = { ...figureSettings.manualColors, [filename]: color };
+    if (colorKey(getAutomaticFileColor(filename)) === targetKey) {
+      delete nextManualColors[filename];
+    }
+
+    const nextFigureSettings: FigureSettingsState = {
+      ...figureSettings,
+      manualColors: nextManualColors,
+    };
+    setFigureSettings(nextFigureSettings);
+    markFitFiguresStaleOnly(
+      'Manual colors changed. Click Run All Fits to refresh the right-hand images.',
+      nextFigureSettings,
+    );
   };
 
   const handleGlobalImageParameterChange = (
@@ -835,7 +747,7 @@ export function AppShell() {
     try {
       const dataset = currentDataset?.filename === filename
         ? currentDataset
-        : await fetchDataset(filename);
+        : await fetchDataset(filename, runId, analysisCropRange);
       const { traces, visibleRange } = buildWaterfallTracePayload(
         dataset,
         waterfallGap,
@@ -845,7 +757,7 @@ export function AppShell() {
       );
       const renderSettings = buildFigureRenderSettings();
       const settings = renderSettings.spectral;
-      const response = await apiClient.post<RenderSpectralFigureResponse>('/render-spectral-figure', {
+      const body = await workflowApi.renderSpectralFigure({
         run_id: runId,
         filename,
         crop_range: analysisCropRange,
@@ -862,13 +774,14 @@ export function AppShell() {
           global: renderSettings.global,
           reverse_wavenumber_axis: figureSettings.global.reverseWavenumberAxis,
           title: settings.title || `SRS Waterfall — ${filename}`,
+          ...(settings.title ? {} : { title: '' }),
         },
       });
-      const nextFitFigureUrls: FitFigureUrlsState = {
-        ...fitFigureUrls,
-        spectral: response.data.spectral_url,
-        spectralHeatmap: response.data.spectral_heatmap_url,
-      };
+      const nextFitFigureUrls = withSpectralFigureUrls(
+        fitFigureUrls,
+        body.spectral_url,
+        body.spectral_heatmap_url,
+      );
       setFitFigureUrls(nextFitFigureUrls);
       setSpectralFigureStatus(
         `Rendered spectral figure for ${filename} (${formatRangeInput(visibleRange.start, visibleRange.end)}).`,
@@ -888,110 +801,50 @@ export function AppShell() {
     setRunFitsPending(true);
     setFitSummaryMsg(`Running fits for ${extractedFilenames.length} file(s)…`);
 
-    const nextResults: FitResultMap = {};
-    const successfulSeriesInput: Array<{
-      filename: string;
-      full_time: number[];
-      full_areas: number[];
-      x_fit: number[];
-      y_fit: number[];
-      x_raw: number[];
-      y_raw: number[];
-      y_fit_norm: number[];
-    }> = [];
-    let successCount = 0;
-    let failureCount = 0;
-
-    for (const filename of extractedFilenames) {
-      try {
-        const integrationBody = await integrateDatasetForFile(filename, false);
-        const timeMin = Math.min(...integrationBody.time);
-        const timeMax = Math.max(...integrationBody.time);
-        const fitRange = fitRanges[filename] ?? { start: timeMin, end: timeMax };
-
-        const xSelected: number[] = [];
-        const ySelected: number[] = [];
-        for (let i = 0; i < integrationBody.time.length; i += 1) {
-          const timeValue = integrationBody.time[i];
-          if (timeValue >= fitRange.start && timeValue <= fitRange.end) {
-            xSelected.push(timeValue);
-            ySelected.push(integrationBody.areas[i]);
-          }
-        }
-
-        if (xSelected.length < 4) {
-          nextResults[filename] = {
-            error: 'Not enough points inside the fit range (need at least 4).',
-          };
-          failureCount += 1;
-          continue;
-        }
-
-        const fitResponse = await apiClient.post('/fit-kinetics', {
-          x: xSelected,
-          y: ySelected,
-        });
-        const normalized = normalizeSeriesPair(ySelected, fitResponse.data.y_fit, fitResponse.data.params);
-        nextResults[filename] = {
+    const {
+      results: nextResults,
+      series: successfulSeriesInput,
+      successCount,
+      failureCount,
+    } = await runFitsForFiles({
+      filenames: extractedFilenames,
+      fitRanges,
+      integrateFile: (filename) =>
+        integrateDatasetForFile({
           filename,
-          fit_range: [fitRange.start, fitRange.end],
-          points_used: xSelected.length,
-          params: fitResponse.data.params,
-          metrics: fitResponse.data.metrics,
-          ci95: fitResponse.data.ci95,
-          integration_window: integrationBody.window,
-        };
-        successfulSeriesInput.push({
-          filename,
-          full_time: integrationBody.time,
-          full_areas: integrationBody.areas,
-          x_fit: fitResponse.data.x_sorted,
-          y_fit: fitResponse.data.y_fit,
-          x_raw: xSelected,
-          y_raw: normalized.raw,
-          y_fit_norm: normalized.fit,
-        });
-        successCount += 1;
-      } catch (error) {
-        nextResults[filename] = {
-          error: getErrorMessage(error, 'Unknown fit error'),
-        };
-        failureCount += 1;
-      }
-    }
+          targetRunId: runId,
+          integrationRange: globalIntegrationRange,
+          baselineMode,
+          cropRange: analysisCropRange,
+        }),
+      fitKinetics: workflowApi.fitKinetics,
+      getErrorMessage,
+    });
 
     setFitResults(nextResults);
 
     const successfulPayload = buildSuccessfulSeriesPayload(successfulSeriesInput, getFileColor);
-    let nextFitFigureUrls: FitFigureUrlsState = {
-      ...fitFigureUrls,
-      overlay: '',
-      normalized: '',
-    };
+    let nextFitFigureUrls = clearFitComparisonUrls(fitFigureUrls);
 
     try {
       if (successfulPayload.length) {
-        const response = await apiClient.post<RenderFitFiguresResponse>('/render-fit-figures', {
+        const body = await workflowApi.renderFitFigures({
           run_id: runId,
           series: successfulPayload,
           figure_settings: buildFigureRenderSettings(),
         });
-        nextFitFigureUrls = {
-          ...nextFitFigureUrls,
-          overlay: response.data.overlay_url,
-          normalized: response.data.normalized_url,
-        };
+        nextFitFigureUrls = withFitComparisonUrls(
+          nextFitFigureUrls,
+          body.overlay_url,
+          body.normalized_url,
+        );
         setFitFigureUrls(nextFitFigureUrls);
         setFitFiguresStale(false);
-        setFitSummaryMsg(
-          failureCount === 0
-            ? `Completed fits for ${successCount} file(s). Overlay and normalized comparison are shown on the right.`
-            : `Completed fits for ${successCount} file(s); ${failureCount} file(s) need attention.`,
-        );
+        setFitSummaryMsg(buildFitSummaryMessage(successCount, failureCount));
       } else {
         setFitFigureUrls(nextFitFigureUrls);
         setFitFiguresStale(false);
-        setFitSummaryMsg('No successful fit image available.');
+        setFitSummaryMsg(buildFitSummaryMessage(0, failureCount));
       }
     } catch (error) {
       setFitFigureUrls(nextFitFigureUrls);
@@ -1100,73 +953,6 @@ export function AppShell() {
     buildRunRecordSnapshot,
   ]);
 
-  useEffect(() => {
-    const updateLayoutBounds = () => {
-      const containerWidth = layoutRef.current?.clientWidth;
-      if (!containerWidth) return;
-      setPaneWidths((prev) => clampPaneWidths(containerWidth, prev.left, prev.right));
-    };
-
-    updateLayoutBounds();
-    window.addEventListener('resize', updateLayoutBounds);
-    return () => {
-      window.removeEventListener('resize', updateLayoutBounds);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(paneWidths));
-  }, [paneWidths]);
-
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      const dragState = dragRef.current;
-      const containerWidth = layoutRef.current?.clientWidth;
-      if (!dragState || !containerWidth) return;
-
-      const delta = event.clientX - dragState.startX;
-      const nextLeft = dragState.side === 'left' ? dragState.startLeft + delta : dragState.startLeft;
-      const nextRight = dragState.side === 'right' ? dragState.startRight - delta : dragState.startRight;
-      setPaneWidths(clampPaneWidths(containerWidth, nextLeft, nextRight));
-    };
-
-    const stopResize = () => {
-      dragRef.current = null;
-      setDraggingSide(null);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', stopResize);
-    window.addEventListener('pointercancel', stopResize);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', stopResize);
-      window.removeEventListener('pointercancel', stopResize);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-  }, []);
-
-  const handleResizeStart = (side: ResizeSide) => (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
-    if (event.pointerType === 'touch') return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    dragRef.current = {
-      side,
-      startX: event.clientX,
-      startLeft: paneWidths.left,
-      startRight: paneWidths.right,
-    };
-    setDraggingSide(side);
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-  };
-
   return (
     <div
       ref={layoutRef}
@@ -1186,18 +972,8 @@ export function AppShell() {
           onFolderInputChange={setFolderInput}
           foundSrsFiles={foundSrsFiles}
           selectedFiles={selectedFiles}
-          onToggleSelectAll={(checked) =>
-            setSelectedFiles(checked ? [...foundSrsFiles] : [])
-          }
-          onToggleFile={(filename, checked) =>
-            setSelectedFiles((prev) =>
-              checked
-                ? prev.includes(filename)
-                  ? prev
-                  : [...prev, filename]
-                : prev.filter((item) => item !== filename),
-            )
-          }
+          onToggleSelectAll={selectAllFiles}
+          onToggleFile={toggleSelectedFile}
           applyFolderPending={applyFolderPending}
           onApplyFolder={handleApplyFolder}
           mode={mode}
@@ -1226,6 +1002,9 @@ export function AppShell() {
           }
           figureSettings={figureSettings}
           onFigureColorSchemeChange={handleFitFigureColorSchemeChange}
+          manualFitColorGrid={manualFitColorGrid}
+          fitFileColors={fitFileColors}
+          onManualFitColorChange={handleManualFitColorChange}
           onFigurePanelChange={handleFitFigurePanelChange}
           onGlobalImageSettingChange={handleGlobalImageParameterChange}
           onSpectralFigureChange={handleSpectralFigureInputChange}

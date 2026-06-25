@@ -97,8 +97,18 @@ export function WaterfallPlot({
   }, []);
 
   useEffect(() => {
+    const plotDiv = plotRef.current;
+    return () => {
+      if (plotly && plotDiv && typeof plotly.purge === 'function') {
+        plotly.purge(plotDiv);
+      }
+    };
+  }, [plotly]);
+
+  useEffect(() => {
     if (!plotly || !plotRef.current || !dataset) return;
     const plotDiv = plotRef.current as PlotlyDiv;
+    let disposed = false;
     const { traces: waterfallTraces, visibleRange } = buildWaterfallTracePayload(
       dataset,
       gap,
@@ -198,15 +208,14 @@ export function WaterfallPlot({
         },
       )
       .then(() => {
+        if (disposed) return;
         captureAxisMeta(plotDiv);
       })
       .catch(() => {});
 
     return () => {
+      disposed = true;
       setAxisMeta(null);
-      if (plotly && typeof plotly.purge === 'function') {
-        plotly.purge(plotDiv);
-      }
     };
   }, [
     captureAxisMeta,
