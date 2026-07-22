@@ -28,6 +28,7 @@ export function useFigureSettings() {
         dpi: Number.isFinite(settings.global.dpi) && settings.global.dpi > 0 ? settings.global.dpi : 300,
         width_cm: Number.isFinite(settings.global.widthCm) && settings.global.widthCm > 0 ? settings.global.widthCm : 10,
         height_cm: Number.isFinite(settings.global.heightCm) && settings.global.heightCm > 0 ? settings.global.heightCm : 8,
+        font_size: Number.isFinite(settings.global.fontSize) && settings.global.fontSize > 0 ? settings.global.fontSize : 11,
         reverse_wavenumber_axis: settings.global.reverseWavenumberAxis,
       },
       color_scheme: settings.colorScheme,
@@ -71,7 +72,10 @@ export function useFigureSettings() {
   );
 
   const handleSpectralFigureChange = useCallback(
-    (key: keyof SpectralFigureSettings, value: string) => {
+    <Key extends keyof SpectralFigureSettings>(
+      key: Key,
+      value: SpectralFigureSettings[Key],
+    ) => {
       setFigureSettings((prev) => ({
         ...prev,
         spectral: { ...prev.spectral, [key]: value },

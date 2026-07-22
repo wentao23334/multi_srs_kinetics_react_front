@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { toast } from 'sonner';
 import {
   buildManualColorGrid,
+  buildEvenlySpacedValues,
   buildFitSummaryMessage,
   clearFitComparisonUrls,
   emptyFitFigureUrls,
   buildWaterfallTracePayload,
   buildSuccessfulSeriesPayload,
+  estimateOverlapScale,
+  formatCompactNumber,
   formatRangeInput,
+  getSpectraValueRange,
   getSnappedRange,
   hasRenderedFitFigures,
   isFitError,
@@ -140,6 +144,7 @@ export function AppShell() {
   const [fitSummaryMsg, setFitSummaryMsg] = useState(INITIAL_FIT_SUMMARY_MESSAGE);
   const [runFitsPending, setRunFitsPending] = useState(false);
   const [spectralFigurePending, setSpectralFigurePending] = useState(false);
+  const [exportSvgPending, setExportSvgPending] = useState(false);
   const [spectralFigureStatus, setSpectralFigureStatus] = useState(INITIAL_SPECTRAL_STATUS);
   const [vizStatusMsg, setVizStatusMsg] = useState('Extract files to begin.');
 
@@ -256,6 +261,41 @@ export function AppShell() {
   );
 
   const currentDatasetFilename = currentDataset?.filename || null;
+
+  const spectralOverlapTimeRange = useMemo(() => {
+    if (!currentDataset || currentDataset.filename !== activeWaterfallFile) return null;
+    return buildWaterfallTracePayload(
+      currentDataset,
+      waterfallGap,
+      waterfallMaxLines,
+      waterfallAppliedTimeRangeInput,
+      waterfallColorScheme,
+    ).visibleRange;
+  }, [
+    activeWaterfallFile,
+    currentDataset,
+    waterfallAppliedTimeRangeInput,
+    waterfallColorScheme,
+    waterfallGap,
+    waterfallMaxLines,
+  ]);
+
+  const spectralOverlapScaleInputDefault = useMemo(() => {
+    const valueRange = getSpectraValueRange(currentDataset, spectralOverlapTimeRange);
+    const count = Math.max(1, Math.floor(Number(figureSettings.spectral.overlapCount) || 1));
+    const times = figureSettings.spectral.overlapTimes.length === count
+      ? figureSettings.spectral.overlapTimes
+      : spectralOverlapTimeRange
+        ? buildEvenlySpacedValues(spectralOverlapTimeRange.start, spectralOverlapTimeRange.end, count)
+        : [];
+    const scale = estimateOverlapScale(valueRange, times, spectralOverlapTimeRange);
+    return scale === null ? '' : formatCompactNumber(scale);
+  }, [
+    currentDataset,
+    figureSettings.spectral.overlapCount,
+    figureSettings.spectral.overlapTimes,
+    spectralOverlapTimeRange,
+  ]);
 
   const buildRunRecordSnapshot = useCallback((
     overrides: RunRecordSnapshotOverrides = {},
@@ -663,9 +703,9 @@ export function AppShell() {
     markSpectralFigureStale();
   };
 
-  const handleSpectralFigureInputChange = (
-    key: keyof SpectralFigureSettings,
-    value: string,
+  const handleSpectralFigureInputChange = <Key extends keyof SpectralFigureSettings>(
+    key: Key,
+    value: SpectralFigureSettings[Key],
   ) => {
     handleSpectralFigureChange(key, value);
     markSpectralFigureStale('Spectral figure settings changed. Render Spectral Figure again to refresh the image.');
@@ -734,6 +774,76 @@ export function AppShell() {
     markSpectralFigureStale('Image parameters changed. Render Spectral Figure again to refresh the image.');
   };
 
+  const runFitsForCurrentFiles = () =>
+    runFitsForFiles({
+      filenames: extractedFilenames,
+      fitRanges,
+      integrateFile: (filename) =>
+        integrateDatasetForFile({
+          filename,
+          targetRunId: runId,
+          integrationRange: globalIntegrationRange,
+          baselineMode,
+          cropRange: analysisCropRange,
+        }),
+      fitKinetics: workflowApi.fitKinetics,
+      getErrorMessage,
+    });
+
+  const buildSpectralFigurePayload = async (filename: string) => {
+    const dataset = currentDataset?.filename === filename
+      ? currentDataset
+      : await fetchDataset(filename, runId, analysisCropRange);
+    const { traces, visibleRange } = buildWaterfallTracePayload(
+      dataset,
+      waterfallGap,
+      waterfallMaxLines,
+      waterfallAppliedTimeRangeInput,
+      waterfallColorScheme,
+    );
+    const renderSettings = buildFigureRenderSettings();
+    const settings = renderSettings.spectral;
+    const overlapCount = Math.max(
+      1,
+      Math.floor(Number(figureSettings.spectral.overlapCount) || 1),
+    );
+    const overlapTimes = figureSettings.spectral.overlapTimes.length === overlapCount
+      ? figureSettings.spectral.overlapTimes
+      : buildEvenlySpacedValues(visibleRange.start, visibleRange.end, overlapCount);
+    const overlapScaleRaw = figureSettings.spectral.overlapScaleInput.trim()
+      ? Number(figureSettings.spectral.overlapScaleInput)
+      : Number(spectralOverlapScaleInputDefault);
+    const overlapScale = Number.isFinite(overlapScaleRaw) ? overlapScaleRaw : null;
+
+    return {
+      traces,
+      visibleRange,
+      renderSettings,
+      heatmap: {
+        color_scale: resolveHeatmapColorScale(waterfallColorScheme),
+        time_range: [visibleRange.start, visibleRange.end] as [number, number],
+        crop_range: analysisCropRange,
+        zmin: settings.zlim ? settings.zlim[0] : null,
+        zmax: settings.zlim ? settings.zlim[1] : null,
+        overlap: figureSettings.spectral.overlapEnabled
+          ? {
+              enabled: true,
+              times: overlapTimes.filter(Number.isFinite),
+              scale: overlapScale,
+              color: '#000000',
+            }
+          : null,
+      },
+      figureSettings: {
+        ...settings,
+        global: renderSettings.global,
+        reverse_wavenumber_axis: figureSettings.global.reverseWavenumberAxis,
+        title: settings.title || `SRS Waterfall - ${filename}`,
+        ...(settings.title ? {} : { title: '' }),
+      },
+    };
+  };
+
   const renderSpectralFigure = async () => {
     const filename = activeWaterfallFile;
     if (!runId || !filename) {
@@ -757,6 +867,17 @@ export function AppShell() {
       );
       const renderSettings = buildFigureRenderSettings();
       const settings = renderSettings.spectral;
+      const overlapCount = Math.max(
+        1,
+        Math.floor(Number(figureSettings.spectral.overlapCount) || 1),
+      );
+      const overlapTimes = figureSettings.spectral.overlapTimes.length === overlapCount
+        ? figureSettings.spectral.overlapTimes
+        : buildEvenlySpacedValues(visibleRange.start, visibleRange.end, overlapCount);
+      const overlapScaleRaw = figureSettings.spectral.overlapScaleInput.trim()
+        ? Number(figureSettings.spectral.overlapScaleInput)
+        : Number(spectralOverlapScaleInputDefault);
+      const overlapScale = Number.isFinite(overlapScaleRaw) ? overlapScaleRaw : null;
       const body = await workflowApi.renderSpectralFigure({
         run_id: runId,
         filename,
@@ -768,6 +889,14 @@ export function AppShell() {
           crop_range: analysisCropRange,
           zmin: settings.zlim ? settings.zlim[0] : null,
           zmax: settings.zlim ? settings.zlim[1] : null,
+          overlap: figureSettings.spectral.overlapEnabled
+            ? {
+                enabled: true,
+                times: overlapTimes.filter(Number.isFinite),
+                scale: overlapScale,
+                color: '#000000',
+              }
+            : null,
         },
         figure_settings: {
           ...settings,
@@ -792,6 +921,40 @@ export function AppShell() {
       toast.error(getErrorMessage(error, 'Failed to render spectral figure'));
     } finally {
       setSpectralFigurePending(false);
+    }
+  };
+
+  const exportSvgFigures = async () => {
+    const filename = activeWaterfallFile;
+    if (!runId || !currentFolderPath || !filename) {
+      toast.error('Extract files and select a waterfall file before SVG export.');
+      return;
+    }
+
+    setExportSvgPending(true);
+    try {
+      const { series } = await runFitsForCurrentFiles();
+      const successfulPayload = buildSuccessfulSeriesPayload(series, getFileColor);
+      if (!successfulPayload.length) {
+        throw new Error('No successful fit data available for SVG export.');
+      }
+
+      const spectralPayload = await buildSpectralFigurePayload(filename);
+      const body = await workflowApi.exportSvgFigures({
+        run_id: runId,
+        source_folder: currentFolderPath,
+        filename,
+        series: successfulPayload,
+        traces: spectralPayload.traces,
+        heatmap: spectralPayload.heatmap,
+        fit_figure_settings: spectralPayload.renderSettings,
+        spectral_figure_settings: spectralPayload.figureSettings,
+      });
+      toast.success(`Exported ${body.files.length} SVG files to the source folder.`);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'SVG export failed'));
+    } finally {
+      setExportSvgPending(false);
     }
   };
 
@@ -1008,6 +1171,10 @@ export function AppShell() {
           onFigurePanelChange={handleFitFigurePanelChange}
           onGlobalImageSettingChange={handleGlobalImageParameterChange}
           onSpectralFigureChange={handleSpectralFigureInputChange}
+          spectralOverlapTimeRange={spectralOverlapTimeRange}
+          spectralOverlapScaleInputDefault={spectralOverlapScaleInputDefault}
+          onExportSvgFigures={() => void exportSvgFigures()}
+          exportSvgPending={exportSvgPending}
           onRenderSpectralFigure={() => void renderSpectralFigure()}
           spectralFigurePending={spectralFigurePending}
           spectralFigureStatus={spectralFigureStatus}

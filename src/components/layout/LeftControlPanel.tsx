@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { sampleColors } from '../../lib/workflowUtils';
+import { COLOR_SCALE_NAMES, sampleColors } from '../../lib/workflowUtils';
 import type {
   FigurePanelSettings,
   FigureSettingsState,
   FitRangeMap,
   GlobalImageSettings,
+  NumericRange,
   SpectralFigureSettings,
 } from '../../types/workflow';
 import {
@@ -63,7 +64,14 @@ interface LeftControlPanelProps {
     value: string | boolean,
   ) => void;
   onGlobalImageSettingChange: (key: keyof GlobalImageSettings, value: number | boolean) => void;
-  onSpectralFigureChange: (key: keyof SpectralFigureSettings, value: string) => void;
+  onSpectralFigureChange: <Key extends keyof SpectralFigureSettings>(
+    key: Key,
+    value: SpectralFigureSettings[Key],
+  ) => void;
+  spectralOverlapTimeRange: NumericRange | null;
+  spectralOverlapScaleInputDefault: string;
+  onExportSvgFigures: () => void;
+  exportSvgPending: boolean;
   onRenderSpectralFigure: () => void;
   spectralFigurePending: boolean;
   spectralFigureStatus: string;
@@ -154,6 +162,10 @@ export function LeftControlPanel({
   onFigurePanelChange,
   onGlobalImageSettingChange,
   onSpectralFigureChange,
+  spectralOverlapTimeRange,
+  spectralOverlapScaleInputDefault,
+  onExportSvgFigures,
+  exportSvgPending,
   onRenderSpectralFigure,
   spectralFigurePending,
   spectralFigureStatus,
@@ -391,7 +403,7 @@ export function LeftControlPanel({
                     onChange={(event) => onFigureColorSchemeChange(event.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 hover:bg-black/30 appearance-none"
                   >
-                    {['None', 'viridis', 'magma', 'plasma', 'inferno', 'cividis', 'Greys', 'RdBu', 'RdBu_r', 'Spectral', 'coolwarm'].map((scale) => (
+                    {COLOR_SCALE_NAMES.map((scale) => (
                       <option key={scale} value={scale} className="bg-slate-900">
                         {scale}
                       </option>
@@ -507,6 +519,8 @@ export function LeftControlPanel({
               <SpectralFigureCard
                 settings={figureSettings.spectral}
                 onChange={onSpectralFigureChange}
+                overlapTimeRange={spectralOverlapTimeRange}
+                overlapScaleInputDefault={spectralOverlapScaleInputDefault}
               />
 
               <div className="space-y-2">
@@ -536,6 +550,8 @@ export function LeftControlPanel({
             <GlobalImageSettingsCard
               settings={figureSettings.global}
               onChange={onGlobalImageSettingChange}
+              onExportSvgFigures={onExportSvgFigures}
+              exportSvgPending={exportSvgPending}
             />
           )}
         </section>

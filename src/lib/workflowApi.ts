@@ -3,6 +3,8 @@ import { apiClient } from './apiClient';
 import type {
   CleanupRunRequest,
   CleanupRunResponse,
+  ExportSvgFiguresRequest,
+  ExportSvgFiguresResponse,
   ExtractAllRequest,
   ExtractAllResponse,
   FitKineticsRequest,
@@ -61,6 +63,12 @@ export const workflowApi = {
   renderSpectralFigure: (payload: RenderSpectralFigureRequest) =>
     postData<RenderSpectralFigureResponse, RenderSpectralFigureRequest>(
       '/render-spectral-figure',
+      payload,
+    ),
+
+  exportSvgFigures: (payload: ExportSvgFiguresRequest) =>
+    postData<ExportSvgFiguresResponse, ExportSvgFiguresRequest>(
+      '/export-svg-figures',
       payload,
     ),
 

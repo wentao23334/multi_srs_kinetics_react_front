@@ -1,8 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
+import {
+  buildEvenlySpacedValues,
+  formatNumber,
+  updateOverlapTimeSelection,
+} from '../../lib/workflowUtils';
 import type {
   FigurePanelSettings,
   GlobalImageSettings,
+  NumericRange,
   SpectralFigureSettings,
 } from '../../types/workflow';
 
@@ -100,9 +106,13 @@ export function ManualFitColorPicker({
 export function GlobalImageSettingsCard({
   settings,
   onChange,
+  onExportSvgFigures,
+  exportSvgPending,
 }: {
   settings: GlobalImageSettings;
   onChange: (key: keyof GlobalImageSettings, value: number | boolean) => void;
+  onExportSvgFigures: () => void;
+  exportSvgPending: boolean;
 }) {
   return (
     <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
@@ -144,6 +154,17 @@ export function GlobalImageSettingsCard({
           className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
         />
       </label>
+      <label className="block text-xs font-medium text-slate-300">
+        <span className="mb-1.5 block">Font Size</span>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={settings.fontSize}
+          onChange={(event) => onChange('fontSize', Number(event.target.value))}
+          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+        />
+      </label>
       <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
         <input
           type="checkbox"
@@ -153,6 +174,14 @@ export function GlobalImageSettingsCard({
         />
         <span>Reverse Wavenumber Axis</span>
       </label>
+      <button
+        type="button"
+        onClick={onExportSvgFigures}
+        disabled={exportSvgPending}
+        className="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-600 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition-all hover:to-cyan-500 hover:shadow-sky-500/40 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+      >
+        {exportSvgPending ? 'Exporting SVG...' : 'Export SVG to Source Folder'}
+      </button>
     </div>
   );
 }
@@ -239,10 +268,46 @@ export function FigurePanelCard({
 export function SpectralFigureCard({
   settings,
   onChange,
+  overlapTimeRange,
+  overlapScaleInputDefault,
 }: {
   settings: SpectralFigureSettings;
-  onChange: (key: keyof SpectralFigureSettings, value: string) => void;
+  onChange: <Key extends keyof SpectralFigureSettings>(
+    key: Key,
+    value: SpectralFigureSettings[Key],
+  ) => void;
+  overlapTimeRange: NumericRange | null;
+  overlapScaleInputDefault: string;
 }) {
+  const fillDefaultOverlapScale = () => {
+    if (!settings.overlapScaleInput.trim() && overlapScaleInputDefault) {
+      onChange('overlapScaleInput', overlapScaleInputDefault);
+    }
+  };
+
+  const resetOverlapTimes = (count = settings.overlapCount) => {
+    if (!overlapTimeRange) return;
+    onChange(
+      'overlapTimes',
+      buildEvenlySpacedValues(overlapTimeRange.start, overlapTimeRange.end, count),
+    );
+  };
+
+  useEffect(() => {
+    if (
+      settings.overlapEnabled &&
+      !settings.overlapScaleInput.trim() &&
+      overlapScaleInputDefault
+    ) {
+      onChange('overlapScaleInput', overlapScaleInputDefault);
+    }
+  }, [
+    onChange,
+    overlapScaleInputDefault,
+    settings.overlapEnabled,
+    settings.overlapScaleInput,
+  ]);
+
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
       <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Spectral Figure</p>
@@ -300,6 +365,143 @@ export function SpectralFigureCard({
             className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
           />
         </label>
+        <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs font-medium text-slate-300">
+          <input
+            type="checkbox"
+            checked={settings.overlapEnabled}
+            onChange={(event) => {
+              onChange('overlapEnabled', event.target.checked);
+              if (event.target.checked && !settings.overlapTimes.length) {
+                resetOverlapTimes();
+              }
+              if (event.target.checked) {
+                fillDefaultOverlapScale();
+              }
+            }}
+            className="h-4 w-4 rounded border-white/20 bg-black/30 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0 transition-all"
+          />
+          <span>Overlap</span>
+        </label>
+
+        {settings.overlapEnabled && (
+          <div className="space-y-3 rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3">
+            <label className="block text-xs font-medium text-slate-300">
+              <span className="mb-1.5 block">Count</span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                step={1}
+                value={settings.overlapCount}
+                onChange={(event) => {
+                  const nextCount = Math.max(1, Math.floor(Number(event.target.value) || 1));
+                  onChange('overlapCount', nextCount);
+                  resetOverlapTimes(nextCount);
+                }}
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-300">
+              <span className="mb-1.5 block">Scale</span>
+              <input
+                type="number"
+                step="any"
+                min={0}
+                value={settings.overlapScaleInput}
+                onChange={(event) => onChange('overlapScaleInput', event.target.value)}
+                placeholder="auto"
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+              />
+            </label>
+            <OverlapTimeAxis
+              count={settings.overlapCount}
+              range={overlapTimeRange}
+              times={settings.overlapTimes}
+              onChange={(times) => onChange('overlapTimes', times)}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OverlapTimeAxis({
+  count,
+  range,
+  times,
+  onChange,
+}: {
+  count: number;
+  range: NumericRange | null;
+  times: number[];
+  onChange: (times: number[]) => void;
+}) {
+  const axisRef = useRef<HTMLDivElement | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  if (!range) {
+    return (
+      <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-xs text-slate-500">
+        Select a waterfall file first.
+      </div>
+    );
+  }
+
+  const start = Math.min(range.start, range.end);
+  const end = Math.max(range.start, range.end);
+  const values = times.length === Math.max(1, Math.floor(count))
+    ? times
+    : buildEvenlySpacedValues(start, end, count);
+
+  const updateFromPointer = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    const rect = axisRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
+    const value = start + (end - start) * ratio;
+    onChange(updateOverlapTimeSelection(values, count, index, value, { start, end }));
+  };
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between text-[10px] font-medium text-slate-500">
+        <span>{formatNumber(start, 4)}</span>
+        <span>{formatNumber(end, 4)}</span>
+      </div>
+      <div ref={axisRef} className="relative h-10 rounded-lg border border-white/10 bg-black/20">
+        <span className="absolute left-2 right-2 top-1/2 h-px -translate-y-1/2 bg-white/15" />
+        {values.map((value, index) => {
+          const left = `${((value - start) / Math.max(end - start, 1e-12)) * 100}%`;
+          const active = activeIndex === index;
+          return (
+            <button
+              key={index}
+              type="button"
+              aria-label={`Overlap time ${index + 1}`}
+              onClick={() => setActiveIndex(index)}
+              onPointerDown={(event) => {
+                setActiveIndex(index);
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+                updateFromPointer(event, index);
+              }}
+              onPointerMove={(event) => {
+                if (event.buttons !== 1) return;
+                updateFromPointer(event, index);
+              }}
+              className="absolute top-1/2 z-10 h-5 w-3 -translate-x-1/2 -translate-y-1/2 cursor-col-resize rounded-full border border-white/50 bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.25)] outline-none transition-transform hover:scale-110 focus:scale-110"
+              style={{ left }}
+            >
+              {active && (
+                <span className="pointer-events-none absolute bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/10 bg-black/90 px-2 py-1 text-[10px] font-medium text-slate-200">
+                  {formatNumber(value, 4)}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

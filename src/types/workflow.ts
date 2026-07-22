@@ -21,12 +21,17 @@ export interface SpectralFigureSettings {
   xRangeInput: string;
   yRangeInput: string;
   zRangeInput: string;
+  overlapEnabled: boolean;
+  overlapCount: number;
+  overlapScaleInput: string;
+  overlapTimes: number[];
 }
 
 export interface GlobalImageSettings {
   dpi: number;
   widthCm: number;
   heightCm: number;
+  fontSize: number;
   reverseWavenumberAxis: boolean;
 }
 

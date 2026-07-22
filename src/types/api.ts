@@ -110,6 +110,7 @@ export interface FigureRenderSettings {
     dpi: number;
     width_cm: number;
     height_cm: number;
+    font_size: number;
     reverse_wavenumber_axis: boolean;
   };
   color_scheme: string;
@@ -152,6 +153,12 @@ export interface RenderSpectralFigureRequest {
     crop_range?: [number, number] | null;
     zmin?: number | null;
     zmax?: number | null;
+    overlap?: {
+      enabled: boolean;
+      times: number[];
+      scale: number | null;
+      color?: string;
+    } | null;
   };
   figure_settings: {
     title: string;
@@ -165,6 +172,7 @@ export interface RenderSpectralFigureRequest {
       dpi: number;
       width_cm: number;
       height_cm: number;
+      font_size?: number;
       reverse_wavenumber_axis?: boolean;
     };
   };
@@ -192,4 +200,19 @@ export interface CleanupRunRequest {
 
 export interface CleanupRunResponse {
   ok: boolean;
+}
+
+export interface ExportSvgFiguresRequest {
+  run_id: string;
+  source_folder: string;
+  filename: string;
+  series: FitFigureSeriesPayload[];
+  traces: RenderSpectralFigureRequest['traces'];
+  heatmap: RenderSpectralFigureRequest['heatmap'];
+  fit_figure_settings: FigureRenderSettings;
+  spectral_figure_settings: RenderSpectralFigureRequest['figure_settings'];
+}
+
+export interface ExportSvgFiguresResponse {
+  files: string[];
 }

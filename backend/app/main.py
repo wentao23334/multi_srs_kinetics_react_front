@@ -52,6 +52,7 @@ def _guess_initial(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float, f
 def _get_matplotlib():
     import matplotlib
     matplotlib.use("Agg")
+    matplotlib.rcParams["svg.fonttype"] = "none"
     import matplotlib.pyplot as plt
 
     return plt
@@ -75,13 +76,14 @@ def _resolve_matplotlib_cmap_name(name: str | None) -> str:
     return "viridis"
 
 
-def _style_axes(ax: Any, xlabel: str, ylabel: str) -> None:
-    ax.set_xlabel(xlabel, fontsize=11, fontname="Arial")
-    ax.set_ylabel(ylabel, fontsize=11, fontname="Arial")
+def _style_axes(ax: Any, xlabel: str, ylabel: str, font_size: float = 11.0) -> None:
+    tick_size = max(font_size - 1.0, 1.0)
+    ax.set_xlabel(xlabel, fontsize=font_size, fontname="Arial")
+    ax.set_ylabel(ylabel, fontsize=font_size, fontname="Arial")
     ax.tick_params(
         axis="both",
         direction="out",
-        labelsize=10,
+        labelsize=tick_size,
         width=0.8,
         length=4,
         top=False,
@@ -93,6 +95,16 @@ def _style_axes(ax: Any, xlabel: str, ylabel: str) -> None:
         spine.set_linewidth(0.8)
         spine.set_edgecolor("black")
     ax.grid(False)
+
+
+def _resolve_font_size(figure_settings: dict[str, Any] | None) -> float:
+    figure_settings = figure_settings or {}
+    global_settings = figure_settings.get("global", {}) if isinstance(figure_settings, dict) else {}
+    try:
+        font_size = float(global_settings.get("font_size", 11))
+    except Exception:
+        font_size = 11.0
+    return font_size if math.isfinite(font_size) and font_size > 0 else 11.0
 
 
 def _resolve_export_settings(figure_settings: dict[str, Any] | None) -> tuple[float, float, int]:
@@ -160,7 +172,7 @@ def _coerce_label_offset(values: Any) -> tuple[float, float]:
     return dx, dy
 
 
-def _add_curve_labels(ax: Any, default_loc: str, offset_values: Any) -> None:
+def _add_curve_labels(ax: Any, default_loc: str, offset_values: Any, font_size: float) -> None:
     dx, dy = _coerce_label_offset(offset_values)
     anchor_map = {
         "upper right": (1.0, 1.0),
@@ -173,7 +185,7 @@ def _add_curve_labels(ax: Any, default_loc: str, offset_values: Any) -> None:
         loc=default_loc,
         bbox_to_anchor=(base_x + dx, base_y - dy),
         frameon=False,
-        fontsize=9,
+        fontsize=max(font_size - 2.0, 1.0),
         handlelength=1.5,
         labelspacing=0.3,
         borderaxespad=0.0,
@@ -185,6 +197,7 @@ def _save_fit_overlay_figure(target_path: Path, series: list[dict[str, Any]], fi
     plt = _get_matplotlib()
     figure_settings = figure_settings or {}
     width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    font_size = _resolve_font_size(figure_settings)
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in series:
@@ -201,6 +214,7 @@ def _save_fit_overlay_figure(target_path: Path, series: list[dict[str, Any]], fi
         ax,
         str(figure_settings.get("xlabel") or "Time / Potential"),
         str(figure_settings.get("ylabel") or "Peak Area"),
+        font_size,
     )
     xlim = _coerce_axis_range(figure_settings.get("xlim"))
     ylim = _coerce_axis_range(figure_settings.get("ylim"))
@@ -209,7 +223,7 @@ def _save_fit_overlay_figure(target_path: Path, series: list[dict[str, Any]], fi
     if ylim:
         ax.set_ylim(*ylim)
     if figure_settings.get("show_labels", True):
-        _add_curve_labels(ax, "upper right", figure_settings.get("label_offset"))
+        _add_curve_labels(ax, "upper right", figure_settings.get("label_offset"), font_size)
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
     fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
@@ -219,6 +233,7 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
     plt = _get_matplotlib()
     figure_settings = figure_settings or {}
     width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    font_size = _resolve_font_size(figure_settings)
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in series:
@@ -247,6 +262,7 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
         ax,
         str(figure_settings.get("xlabel") or "Time / Potential"),
         str(figure_settings.get("ylabel") or "Normalized Peak Area"),
+        font_size,
     )
     xlim = _coerce_axis_range(figure_settings.get("xlim"))
     ylim = _coerce_axis_range(figure_settings.get("ylim"))
@@ -255,7 +271,7 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
     if ylim:
         ax.set_ylim(*ylim)
     if figure_settings.get("show_labels", True):
-        _add_curve_labels(ax, "lower right", figure_settings.get("label_offset"))
+        _add_curve_labels(ax, "lower right", figure_settings.get("label_offset"), font_size)
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
     fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
@@ -269,6 +285,7 @@ def _save_spectral_figure(
     plt = _get_matplotlib()
     figure_settings = figure_settings or {}
     width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    font_size = _resolve_font_size(figure_settings)
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in traces:
@@ -283,10 +300,11 @@ def _save_spectral_figure(
         ax,
         str(figure_settings.get("xlabel") or r"Wavenumber (cm$^{-1}$)"),
         str(figure_settings.get("ylabel") or "Absorbance (a.u.)"),
+        font_size,
     )
     title = str(figure_settings.get("title") or "").strip()
     if title:
-        ax.set_title(title, fontsize=11, fontname="Arial", pad=8)
+        ax.set_title(title, fontsize=font_size, fontname="Arial", pad=8)
     xlim = _coerce_axis_range(figure_settings.get("xlim"))
     ylim = _coerce_axis_range(figure_settings.get("ylim"))
     if xlim:
@@ -300,6 +318,79 @@ def _save_spectral_figure(
     plt.close(fig)
 
 
+def _add_heatmap_spectral_overlap(
+    ax: Any,
+    heatmap: dict[str, Any],
+    figure_settings: dict[str, Any] | None = None,
+) -> None:
+    overlap = heatmap.get("overlap")
+    if not isinstance(overlap, dict) or not overlap.get("enabled"):
+        return
+
+    try:
+        target_times = np.asarray(overlap.get("times", []), dtype=float)
+        x_values = np.asarray(heatmap["x"], dtype=float)
+        y_values = np.asarray(heatmap["y"], dtype=float)
+        z_values = np.asarray(heatmap["z"], dtype=float)
+    except Exception:
+        return
+
+    target_times = target_times[np.isfinite(target_times)]
+    if target_times.size == 0 or x_values.size == 0 or y_values.size == 0 or z_values.ndim != 2:
+        return
+    if z_values.shape[0] != y_values.size or z_values.shape[1] != x_values.size:
+        return
+
+    scale = _coerce_float(overlap.get("scale"))
+
+    if scale is None:
+        finite_values = z_values[np.isfinite(z_values)]
+        if finite_values.size == 0:
+            return
+
+        z_span = float(np.max(finite_values) - np.min(finite_values))
+        if not math.isfinite(z_span) or abs(z_span) < 1e-12:
+            return
+
+        sorted_times = np.sort(np.unique(target_times))
+        if sorted_times.size > 1:
+            spacing = float(np.median(np.diff(sorted_times)))
+        elif y_values.size > 1:
+            spacing = float((np.max(y_values) - np.min(y_values)) / max(min(y_values.size - 1, 10), 1))
+        else:
+            spacing = 1.0
+
+        scale = (abs(spacing) * 0.8) / z_span if math.isfinite(spacing) and abs(spacing) > 0 else None
+
+    if scale is None or not math.isfinite(scale):
+        return
+
+    xlim = _coerce_axis_range((figure_settings or {}).get("xlim"))
+    if xlim:
+        x_visible = np.where((x_values >= xlim[0]) & (x_values <= xlim[1]))[0]
+        anchor_source = x_visible if x_visible.size else np.arange(x_values.size)
+    else:
+        anchor_source = np.arange(x_values.size)
+
+    anchor_order = anchor_source[np.argsort(x_values[anchor_source])]
+    if _should_reverse_wavenumber_axis(figure_settings):
+        anchor_order = anchor_order[::-1]
+    anchor_order = anchor_order[: min(5, anchor_order.size)]
+    color = str(overlap.get("color") or "black")
+
+    for target_time in target_times:
+        row_idx = int(np.argmin(np.abs(y_values - target_time)))
+        base_time = float(y_values[row_idx])
+        row = z_values[row_idx].astype(float)
+        anchor_values = row[anchor_order]
+        anchor_values = anchor_values[np.isfinite(anchor_values)]
+        if anchor_values.size == 0:
+            continue
+        anchor = float(np.median(anchor_values))
+        y_overlay = base_time + (row - anchor) * scale
+        ax.plot(x_values, y_overlay, color=color, linewidth=0.8, alpha=0.9)
+
+
 def _save_spectral_heatmap_figure(
     target_path: Path,
     heatmap: dict[str, Any],
@@ -308,6 +399,7 @@ def _save_spectral_heatmap_figure(
     plt = _get_matplotlib()
     figure_settings = figure_settings or {}
     width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
+    font_size = _resolve_font_size(figure_settings)
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
     z_values = np.asarray(heatmap["z"], dtype=float)
     finite_values = z_values[np.isfinite(z_values)]
@@ -341,12 +433,16 @@ def _save_spectral_heatmap_figure(
         vmin=vmin,
         vmax=vmax,
     )
+    heatmap_ylim = ax.get_ylim()
 
     _style_axes(
         ax,
         str(figure_settings.get("xlabel") or r"Wavenumber (cm$^{-1}$)"),
         "Time (s)",
+        font_size,
     )
+    _add_heatmap_spectral_overlap(ax, heatmap, figure_settings)
+    ax.set_ylim(*heatmap_ylim)
 
     xlim = _coerce_axis_range(figure_settings.get("xlim"))
     if xlim:
@@ -365,7 +461,7 @@ def _save_spectral_heatmap_figure(
         transform=cbar.ax.transAxes,
         ha="right",
         va="center",
-        fontsize=10,
+        fontsize=max(font_size - 1.0, 1.0),
         fontname="Arial",
         color="black",
     )
@@ -376,7 +472,7 @@ def _save_spectral_heatmap_figure(
         transform=cbar.ax.transAxes,
         ha="left",
         va="center",
-        fontsize=10,
+        fontsize=max(font_size - 1.0, 1.0),
         fontname="Arial",
         color="black",
     )
@@ -384,6 +480,38 @@ def _save_spectral_heatmap_figure(
     fig.subplots_adjust(left=0.18, right=0.93, bottom=0.15, top=0.90)
     fig.savefig(target_path, dpi=dpi, bbox_inches=None, pad_inches=0.1, facecolor=fig.get_facecolor(), transparent=False)
     plt.close(fig)
+
+
+def _unique_export_path(folder: Path, filename: str) -> Path:
+    target = folder / filename
+    if not target.exists():
+        return target
+
+    stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+    return folder / f"{target.stem}_{stamp}{target.suffix}"
+
+
+def _build_fit_figure_series(series: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    overlay_series = []
+    normalized_series = []
+    for item in series:
+        overlay_series.append({
+            "label": item["label"],
+            "color": item["color"],
+            "full_time": item["full_time"],
+            "full_areas": item["full_areas"],
+            "x_fit": item["x_fit"],
+            "y_fit": item["y_fit"],
+        })
+        normalized_series.append({
+            "label": item["label"],
+            "color": item["color"],
+            "x_raw": item["x_raw"],
+            "y_raw": item["y_raw"],
+            "x_fit": item["x_fit"],
+            "y_fit": item["y_fit_norm"],
+        })
+    return overlay_series, normalized_series
 
 
 def _parse_timeseries_txt(path: Path) -> dict[str, Any]:
@@ -475,6 +603,7 @@ def _build_heatmap_payload(run_id: str, filename: str, heatmap_settings: dict[st
         "crop_range": heatmap_settings.get("crop_range"),
         "zmin": heatmap_settings.get("zmin"),
         "zmax": heatmap_settings.get("zmax"),
+        "overlap": heatmap_settings.get("overlap"),
     }
 
 
@@ -827,25 +956,7 @@ async def render_fit_figures(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="run_id not found")
 
     try:
-        overlay_series = []
-        normalized_series = []
-        for item in series:
-            overlay_series.append({
-                "label": item["label"],
-                "color": item["color"],
-                "full_time": item["full_time"],
-                "full_areas": item["full_areas"],
-                "x_fit": item["x_fit"],
-                "y_fit": item["y_fit"],
-            })
-            normalized_series.append({
-                "label": item["label"],
-                "color": item["color"],
-                "x_raw": item["x_raw"],
-                "y_raw": item["y_raw"],
-                "x_fit": item["x_fit"],
-                "y_fit": item["y_fit_norm"],
-            })
+        overlay_series, normalized_series = _build_fit_figure_series(series)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid series payload: {e}") from e
 
@@ -904,6 +1015,74 @@ async def render_spectral_figure(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "spectral_url": f"/api/fit-figure/{run_id}/spectral?ts={stamp}",
         "spectral_heatmap_url": f"/api/fit-figure/{run_id}/spectral-heatmap?ts={stamp}",
+    }
+
+
+@app.post("/api/export-svg-figures")
+async def export_svg_figures(payload: dict[str, Any]) -> dict[str, Any]:
+    run_id = str(payload.get("run_id", "")).strip()
+    source_folder = str(payload.get("source_folder", "")).strip()
+    filename = str(payload.get("filename", "")).strip()
+    series = list(payload.get("series", []))
+    traces = list(payload.get("traces", []))
+    heatmap = payload.get("heatmap", {})
+    fit_figure_settings = payload.get("fit_figure_settings", {})
+    spectral_figure_settings = payload.get("spectral_figure_settings", {})
+
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if not source_folder:
+        raise HTTPException(status_code=400, detail="source_folder is required")
+    if not filename:
+        raise HTTPException(status_code=400, detail="filename is required")
+    if not series:
+        raise HTTPException(status_code=400, detail="series is required")
+    if not traces:
+        raise HTTPException(status_code=400, detail="traces are required")
+    if not isinstance(heatmap, dict) or not heatmap:
+        raise HTTPException(status_code=400, detail="heatmap is required")
+
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail="run_id not found")
+
+    source_dir = Path(source_folder)
+    if not source_dir.is_dir():
+        raise HTTPException(status_code=400, detail="source_folder is not a valid directory")
+
+    try:
+        overlay_series, normalized_series = _build_fit_figure_series(series)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid series payload: {e}") from e
+
+    try:
+        fit_global_settings = fit_figure_settings.get("global", {}) if isinstance(fit_figure_settings, dict) else {}
+        overlay_settings = fit_figure_settings.get("overlay", {}) if isinstance(fit_figure_settings, dict) else {}
+        normalized_settings = fit_figure_settings.get("normalized", {}) if isinstance(fit_figure_settings, dict) else {}
+        overlay_settings = {**overlay_settings, "global": fit_global_settings}
+        normalized_settings = {**normalized_settings, "global": fit_global_settings}
+
+        stem = Path(filename).stem
+        overlay_path = _unique_export_path(source_dir, "multi_srs_fit_overlay.svg")
+        normalized_path = _unique_export_path(source_dir, "multi_srs_fit_normalized.svg")
+        spectral_path = _unique_export_path(source_dir, f"{stem}_spectral_waterfall.svg")
+        heatmap_path = _unique_export_path(source_dir, f"{stem}_spectral_heatmap.svg")
+
+        heatmap_payload = _build_heatmap_payload(run_id, filename, heatmap)
+        _save_fit_overlay_figure(overlay_path, overlay_series, overlay_settings)
+        _save_fit_normalized_figure(normalized_path, normalized_series, normalized_settings)
+        _save_spectral_figure(spectral_path, traces, spectral_figure_settings if isinstance(spectral_figure_settings, dict) else {})
+        _save_spectral_heatmap_figure(heatmap_path, heatmap_payload, spectral_figure_settings if isinstance(spectral_figure_settings, dict) else {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to export SVG figures: {e}") from e
+
+    return {
+        "files": [
+            str(overlay_path),
+            str(normalized_path),
+            str(spectral_path),
+            str(heatmap_path),
+        ],
     }
 
 

@@ -1,5 +1,6 @@
 import { KineticsPlot } from '../plots/KineticsPlot';
 import { WaterfallPlot } from '../plots/WaterfallPlot';
+import { COLOR_SCALE_NAMES } from '../../lib/workflowUtils';
 import type { GetDatasetResponse } from '../../types/api';
 import type { IntegrationCacheEntry, NumericRange } from '../../types/workflow';
 
@@ -162,7 +163,7 @@ export function MainWorkspace({
                   onChange={(event) => onWaterfallColorSchemeChange(event.target.value)}
                   className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40 appearance-none pointer-events-auto"
                 >
-                  {['None', 'viridis', 'magma', 'plasma', 'inferno', 'cividis', 'Greys', 'RdBu', 'RdBu_r', 'Spectral', 'coolwarm'].map((scale) => (
+                  {COLOR_SCALE_NAMES.map((scale) => (
                     <option key={scale} value={scale} className="bg-slate-900">
                       {scale}
                     </option>

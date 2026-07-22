@@ -3,18 +3,25 @@ import test from 'node:test';
 
 import {
   buildManualColorGrid,
+  buildEvenlySpacedValues,
+  estimateOverlapScale,
   buildFitSummaryMessage,
   clearFitComparisonUrls,
   buildSuccessfulSeriesPayload,
   buildWaterfallTracePayload,
+  COLOR_SCALE_NAMES,
   DEFAULT_FIGURE_SETTINGS,
   emptyFitFigureUrls,
+  formatCompactNumber,
+  getSpectraValueRange,
   hasRenderedFitFigures,
   normalizeSeriesPair,
   parseOffsetInput,
   parseRangeInput,
   runFitsForFiles,
   sampleColors,
+  resolveHeatmapColorScale,
+  updateOverlapTimeSelection,
   withFitComparisonUrls,
   withSpectralFigureUrls,
 } from '../src/lib/workflowUtils.ts';
@@ -23,15 +30,30 @@ import {
   buildInitialRunRecordSnapshot,
 } from '../src/lib/runRecordUtils.ts';
 
+function assertCloseArray(actual, expected, epsilon = 1e-12) {
+  assert.equal(actual.length, expected.length);
+  actual.forEach((value, index) => {
+    assert.ok(Math.abs(value - expected[index]) < epsilon);
+  });
+}
+
 test('range and offset parsers normalize valid input and reject bad input', () => {
   assert.deepEqual(parseRangeInput('5, 2'), { start: 2, end: 5 });
   assert.equal(parseRangeInput('bad'), null);
   assert.deepEqual(parseOffsetInput('1.5, -2'), [1.5, -2]);
   assert.deepEqual(parseOffsetInput('bad'), [0, 0]);
+  assert.equal(formatCompactNumber(0.0000123456), '0.0000123456');
+  assert.equal(formatCompactNumber(123.456789), '123.457');
 });
 
 test('color helpers keep selected manual colors available', () => {
   assert.equal(sampleColors('None', 3).length, 3);
+  assert.ok(COLOR_SCALE_NAMES.includes('Reds'));
+  assert.ok(COLOR_SCALE_NAMES.includes('Blues'));
+  assert.deepEqual(sampleColors('Reds', 2), ['#fff5f0', '#67000d']);
+  assert.deepEqual(sampleColors('Blues', 2), ['#f7fbff', '#08306b']);
+  assert.equal(resolveHeatmapColorScale('Reds'), 'Reds');
+  assert.equal(resolveHeatmapColorScale('Blues'), 'Blues');
 
   const selected = ['#123456', '#abcdef'];
   const grid = buildManualColorGrid('viridis', selected, 8);
@@ -59,6 +81,43 @@ test('waterfall payload sorts time and applies visible range', () => {
   assert.equal(result.traces.length, 2);
   assert.deepEqual(result.visibleRange, { start: 0, end: 1 });
   assert.deepEqual(result.traces.map((trace) => trace.label), ['t=0.0000', 't=1.0000']);
+});
+
+test('overlap time helpers generate and update draggable labels', () => {
+  assert.deepEqual(buildEvenlySpacedValues(0, 9, 4), [0, 3, 6, 9]);
+  assert.deepEqual(buildEvenlySpacedValues(9, 0, 1), [4.5]);
+
+  assertCloseArray(
+    updateOverlapTimeSelection([0, 3, 6, 9], 4, 0, 2, { start: 0, end: 9 }),
+    [2, 4.333333333333333, 6.666666666666666, 9],
+  );
+  assert.deepEqual(
+    updateOverlapTimeSelection([0, 3, 6, 9], 4, 2, 8, { start: 0, end: 9 }),
+    [0, 3, 8, 9],
+  );
+});
+
+test('spectra value range follows the visible heatmap time range', () => {
+  const dataset = {
+    filename: 'sample.srs',
+    wavenumbers: [1000, 1100],
+    time: [0, 1, 2],
+    spectra: [
+      [10, 20],
+      [-1, 5],
+      [100, 200],
+    ],
+  };
+
+  assert.deepEqual(getSpectraValueRange(dataset, { start: 0.5, end: 1.5 }), {
+    start: -1,
+    end: 5,
+  });
+  assert.deepEqual(getSpectraValueRange(dataset, null), { start: -1, end: 200 });
+  assert.equal(
+    estimateOverlapScale({ start: -1, end: 5 }, [0, 1, 2], { start: 0, end: 2 }),
+    0.13333333333333333,
+  );
 });
 
 test('normalization and fit figure payload preserve expected fields', () => {

@@ -16,17 +16,22 @@ const colorScales: Record<string, string[]> = {
   inferno: ['#000004', '#420a68', '#932667', '#dd513a', '#fdea45'],
   cividis: ['#00224e', '#434e6c', '#7d7c78', '#bcae6c', '#fee838'],
   Greys: ['#111111', '#444444', '#777777', '#aaaaaa', '#dddddd'],
+  Reds: ['#fff5f0', '#fcbba1', '#fb6a4a', '#cb181d', '#67000d'],
+  Blues: ['#f7fbff', '#c6dbef', '#6baed6', '#2171b5', '#08306b'],
   RdBu: ['#67001f', '#d6604d', '#f7f7f7', '#4393c3', '#053061'],
   RdBu_r: ['#053061', '#4393c3', '#f7f7f7', '#d6604d', '#67001f'],
   Spectral: ['#9e0142', '#f46d43', '#fdae61', '#abdda4', '#3288bd', '#5e4fa2'],
   coolwarm: ['#3b4cc0', '#8db0fe', '#f7f7f7', '#f4987a', '#b40426'],
 };
 
+export const COLOR_SCALE_NAMES = Object.keys(colorScales);
+
 export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
   global: {
     dpi: 300,
     widthCm: 10,
     heightCm: 8,
+    fontSize: 11,
     reverseWavenumberAxis: false,
   },
   colorScheme: 'RdBu_r',
@@ -54,6 +59,10 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
     xRangeInput: '',
     yRangeInput: '',
     zRangeInput: '',
+    overlapEnabled: false,
+    overlapCount: 10,
+    overlapScaleInput: '',
+    overlapTimes: [],
   },
 };
 
@@ -161,6 +170,10 @@ export function formatRangeInput(start: number, end: number) {
   return `${formatNumber(start, 4)},${formatNumber(end, 4)}`;
 }
 
+export function formatCompactNumber(value: number) {
+  return Number.isFinite(value) ? Number(value.toPrecision(6)).toString() : '0';
+}
+
 export function parseRangeInput(value: string) {
   const text = String(value || '').trim();
   if (!text) return null;
@@ -177,6 +190,94 @@ export function parseOffsetInput(value: string): [number, number] {
   const parts = text.split(',').map((item) => Number(item.trim()));
   if (parts.length !== 2 || parts.some((item) => !Number.isFinite(item))) return [0, 0];
   return [parts[0], parts[1]] as [number, number];
+}
+
+export function buildEvenlySpacedValues(startValue: number, endValue: number, count: number) {
+  const safeCount = Math.max(1, Math.floor(Number.isFinite(count) ? count : 1));
+  const start = Math.min(startValue, endValue);
+  const end = Math.max(startValue, endValue);
+  if (safeCount === 1) return [(start + end) / 2];
+  return Array.from(
+    { length: safeCount },
+    (_, index) => start + ((end - start) * index) / (safeCount - 1),
+  );
+}
+
+export function updateOverlapTimeSelection(
+  values: number[],
+  count: number,
+  movedIndex: number,
+  rawValue: number,
+  range: NumericRange,
+) {
+  const safeCount = Math.max(1, Math.floor(Number.isFinite(count) ? count : 1));
+  const start = Math.min(range.start, range.end);
+  const end = Math.max(range.start, range.end);
+  const value = Math.min(Math.max(rawValue, start), end);
+  const current = values.length === safeCount
+    ? [...values]
+    : buildEvenlySpacedValues(start, end, safeCount);
+
+  if (safeCount === 1) return [value];
+  if (movedIndex <= 0) {
+    return buildEvenlySpacedValues(value, current[safeCount - 1], safeCount);
+  }
+  if (movedIndex >= safeCount - 1) {
+    return buildEvenlySpacedValues(current[0], value, safeCount);
+  }
+
+  current[movedIndex] = Math.min(
+    Math.max(value, current[movedIndex - 1]),
+    current[movedIndex + 1],
+  );
+  return current;
+}
+
+export function getSpectraValueRange(
+  dataset: GetDatasetResponse | null,
+  timeRange: NumericRange | null,
+): NumericRange | null {
+  if (!dataset) return null;
+
+  let minValue = Infinity;
+  let maxValue = -Infinity;
+  for (let rowIndex = 0; rowIndex < dataset.spectra.length; rowIndex += 1) {
+    const timeValue = dataset.time[rowIndex];
+    if (timeRange && (timeValue < timeRange.start || timeValue > timeRange.end)) continue;
+
+    for (const value of dataset.spectra[rowIndex]) {
+      if (value < minValue) minValue = value;
+      if (value > maxValue) maxValue = value;
+    }
+  }
+
+  if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return null;
+  return { start: minValue, end: maxValue };
+}
+
+export function estimateOverlapScale(
+  valueRange: NumericRange | null,
+  timeValues: number[],
+  fallbackTimeRange: NumericRange | null,
+) {
+  if (!valueRange) return null;
+  const valueSpan = Math.abs(valueRange.end - valueRange.start);
+  if (!Number.isFinite(valueSpan) || valueSpan < 1e-12) return null;
+
+  const sortedTimes = Array.from(new Set(timeValues.filter(Number.isFinite))).sort((a, b) => a - b);
+  const diffs = sortedTimes
+    .slice(1)
+    .map((value, index) => value - sortedTimes[index])
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+
+  const spacing = diffs.length
+    ? diffs[Math.floor(diffs.length / 2)]
+    : fallbackTimeRange
+      ? Math.abs(fallbackTimeRange.end - fallbackTimeRange.start)
+      : 0;
+  if (!Number.isFinite(spacing) || spacing <= 0) return null;
+  return (0.8 * spacing) / valueSpan;
 }
 
 function hexToRgb(hex: string) {
@@ -387,6 +488,8 @@ export function resolveHeatmapColorScale(scaleName: string) {
     inferno: 'Inferno',
     cividis: 'Cividis',
     Greys: 'Greys',
+    Reds: 'Reds',
+    Blues: 'Blues',
     RdBu: 'RdBu',
     RdBu_r: 'RdBu_r',
     Spectral: 'Spectral',
