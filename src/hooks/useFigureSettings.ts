@@ -47,6 +47,10 @@ export function useFigureSettings() {
         ylim: parseRangeTuple(settings.normalized.yRangeInput),
         show_labels: settings.normalized.showLabels,
         label_offset: parseOffsetInput(settings.normalized.labelOffsetInput),
+        marker_size: Number(settings.normalized.markerSizeInput) > 0
+          ? Number(settings.normalized.markerSizeInput)
+          : 20,
+        enhance_fit: Boolean(settings.normalized.enhanceFit),
       },
       spectral: {
         title: settings.spectral.title.trim(),

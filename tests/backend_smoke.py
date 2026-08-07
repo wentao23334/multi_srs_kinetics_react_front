@@ -108,7 +108,7 @@ async def main() -> None:
                     "fit_figure_settings": {
                         "global": {"dpi": 80, "width_cm": 4, "height_cm": 3, "font_size": 12},
                         "overlay": {},
-                        "normalized": {},
+                        "normalized": {"marker_size": 30, "enhance_fit": True},
                     },
                     "spectral_figure_settings": {
                         "global": {"dpi": 80, "width_cm": 4, "height_cm": 3, "font_size": 12},

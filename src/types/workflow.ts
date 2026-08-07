@@ -12,6 +12,8 @@ export interface FigurePanelSettings {
   yRangeInput: string;
   showLabels: boolean;
   labelOffsetInput: string;
+  markerSizeInput?: string;
+  enhanceFit?: boolean;
 }
 
 export interface SpectralFigureSettings {

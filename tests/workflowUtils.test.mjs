@@ -264,6 +264,8 @@ test('initial run record snapshot preserves extraction defaults', () => {
     spectral_image: null,
     spectral_heatmap_image: null,
   });
+  assert.equal(snapshot.settings.figure_render.normalized.markerSizeInput, '20');
+  assert.equal(snapshot.settings.figure_render.normalized.enhanceFit, false);
 });
 
 test('current run record snapshot summarizes active state and stale artifacts', () => {

@@ -234,6 +234,9 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
     figure_settings = figure_settings or {}
     width_cm, height_cm, dpi = _resolve_export_settings(figure_settings)
     font_size = _resolve_font_size(figure_settings)
+    marker_size = _coerce_float(figure_settings.get("marker_size"))
+    marker_size = marker_size if marker_size is not None and marker_size > 0 else 20.0
+    enhance_fit = figure_settings.get("enhance_fit") is True
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54), dpi=dpi, facecolor="white")
 
     for item in series:
@@ -250,13 +253,19 @@ def _save_fit_normalized_figure(target_path: Path, series: list[dict[str, Any]],
         ax.scatter(
             x_raw,
             y_raw,
-            s=20,
+            s=marker_size,
             facecolors="none",
             edgecolors=color,
             linewidths=1.3,
             label=label,
         )
-        ax.plot(x_fit, y_fit, color=color, linewidth=1.3)
+        ax.plot(
+            x_fit,
+            y_fit,
+            color="black" if enhance_fit else color,
+            linewidth=1.3,
+            zorder=10 if enhance_fit else 2,
+        )
 
     _style_axes(
         ax,

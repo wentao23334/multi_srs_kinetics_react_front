@@ -103,6 +103,8 @@ export interface FigurePanelRenderSettings {
   ylim: [number, number] | null;
   show_labels: boolean;
   label_offset: [number, number];
+  marker_size?: number;
+  enhance_fit?: boolean;
 }
 
 export interface FigureRenderSettings {

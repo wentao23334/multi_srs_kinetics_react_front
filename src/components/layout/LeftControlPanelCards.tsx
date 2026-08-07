@@ -241,7 +241,31 @@ export function FigurePanelCard({
             />
           </label>
         </div>
-        <div className="flex items-center gap-4 pt-1">
+        {panelKey === 'normalized' && (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-xs font-medium text-slate-300">
+              <span className="mb-1.5 block">Circle Size</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={settings.markerSizeInput ?? '20'}
+                onChange={(event) => onChange(panelKey, 'markerSizeInput', event.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+              />
+            </label>
+            <label className="flex cursor-pointer items-end gap-2 pb-2 text-xs font-medium text-slate-300">
+              <input
+                type="checkbox"
+                checked={settings.enhanceFit ?? false}
+                onChange={(event) => onChange(panelKey, 'enhanceFit', event.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
+              />
+              <span>Enhance Fit Curves</span>
+            </label>
+          </div>
+        )}
+        <div className="pt-1">
           <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
             <input
               type="checkbox"
@@ -251,15 +275,15 @@ export function FigurePanelCard({
             />
             <span>Show Curve Labels</span>
           </label>
-          <label className="flex flex-1 items-center gap-2 text-xs font-medium text-slate-300">
-            <span className="whitespace-nowrap">Offset %</span>
-            <input
-              value={settings.labelOffsetInput}
-              onChange={(event) => onChange(panelKey, 'labelOffsetInput', event.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
-            />
-          </label>
         </div>
+        <label className="block text-xs font-medium text-slate-300">
+          <span className="mb-1.5 block">Offset %</span>
+          <input
+            value={settings.labelOffsetInput}
+            onChange={(event) => onChange(panelKey, 'labelOffsetInput', event.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+          />
+        </label>
       </div>
     </div>
   );

@@ -51,6 +51,8 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
     yRangeInput: '',
     showLabels: true,
     labelOffsetInput: '0,0',
+    markerSizeInput: '20',
+    enhanceFit: false,
   },
   spectral: {
     title: 'SRS Waterfall',

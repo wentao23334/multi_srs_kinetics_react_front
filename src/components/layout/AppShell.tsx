@@ -29,6 +29,7 @@ import { useFigureSettings } from '../../hooks/useFigureSettings';
 import { useResizablePanes, type ResizeSide } from '../../hooks/useResizablePanes';
 import { useRunRecord } from '../../hooks/useRunRecord';
 import type {
+  FigurePanelSettings,
   FigureSettingsState,
   FitFigureUrlsState,
   FitResultMap,
@@ -713,7 +714,7 @@ export function AppShell() {
 
   const handleFitFigurePanelChange = (
     panel: 'overlay' | 'normalized',
-    key: 'xlabel' | 'ylabel' | 'xRangeInput' | 'yRangeInput' | 'showLabels' | 'labelOffsetInput',
+    key: keyof FigurePanelSettings,
     value: string | boolean,
   ) => {
     handleFigurePanelChange(panel, key, value);
