@@ -153,6 +153,41 @@ def _coerce_axis_range(values: Any) -> tuple[float, float] | None:
     return (lo, hi) if lo <= hi else (hi, lo)
 
 
+def _subtract_spectral_baselines(
+    wavenumbers: np.ndarray,
+    spectra: np.ndarray,
+    x_range: tuple[float, float] | None = None,
+) -> np.ndarray:
+    wn = np.asarray(wavenumbers, dtype=float)
+    values = np.asarray(spectra, dtype=float)
+    if wn.size == 0 or values.ndim != 2 or values.shape[1] != wn.size:
+        return values.copy()
+
+    finite_wn = wn[np.isfinite(wn)]
+    if finite_wn.size == 0:
+        return values.copy()
+
+    data_start = float(np.min(finite_wn))
+    data_end = float(np.max(finite_wn))
+    start = max(x_range[0], data_start) if x_range else data_start
+    end = min(x_range[1], data_end) if x_range else data_end
+    if start > end:
+        start, end = data_start, data_end
+
+    midpoint = (start + end) / 2.0
+    reference_indices = np.where(np.isfinite(wn) & (wn >= start) & (wn <= midpoint))[0]
+    if reference_indices.size == 0:
+        return values.copy()
+
+    corrected = values.copy()
+    for row_index, row in enumerate(values):
+        reference_values = row[reference_indices]
+        reference_values = reference_values[np.isfinite(reference_values)]
+        if reference_values.size:
+            corrected[row_index] = row - float(np.mean(reference_values))
+    return corrected
+
+
 def _coerce_float(value: Any) -> float | None:
     try:
         number = float(value)
@@ -543,6 +578,32 @@ def _parse_timeseries_txt(path: Path) -> dict[str, Any]:
     }
 
 
+def _write_timeseries_txt(
+    path: Path,
+    wavenumbers: np.ndarray,
+    time_axis: np.ndarray,
+    spectra: np.ndarray,
+) -> None:
+    header = "\t" + "\t".join(f"{value:.6f}" for value in wavenumbers)
+    data = np.column_stack((time_axis, spectra))
+    np.savetxt(path, data, delimiter="\t", header=header, comments="", encoding="utf-8")
+
+
+def _available_subtracted_filename(
+    run_dir: Path,
+    source_dir: Path,
+    original_stem: str,
+    background_time: float,
+) -> str:
+    base = f"{original_stem}_sub_{background_time:.10g}"
+    candidate = f"{base}.txt"
+    counter = 2
+    while (run_dir / candidate).exists() or (source_dir / candidate).exists():
+        candidate = f"{base}_{counter}.txt"
+        counter += 1
+    return candidate
+
+
 def _apply_wavenumber_crop(parsed: dict[str, Any], crop_range: tuple[float, float] | None) -> dict[str, Any]:
     if not crop_range:
         return parsed
@@ -595,6 +656,14 @@ def _build_heatmap_payload(run_id: str, filename: str, heatmap_settings: dict[st
 
     if spectra.ndim != 2 or spectra.shape[0] != time_axis.size or spectra.shape[1] != wn.size:
         raise HTTPException(status_code=400, detail="spectra/time/wavenumber shape mismatch")
+
+    baseline_correction = heatmap_settings.get("baseline_correction")
+    if isinstance(baseline_correction, dict) and _as_bool(baseline_correction.get("enabled")):
+        spectra = _subtract_spectral_baselines(
+            wn,
+            spectra,
+            _coerce_axis_range(baseline_correction.get("x_range")),
+        )
 
     time_range = _coerce_axis_range(heatmap_settings.get("time_range"))
     if time_range:
@@ -825,6 +894,67 @@ async def get_dataset(payload: dict[str, Any]) -> dict[str, Any]:
     crop_range = _coerce_axis_range(payload.get("crop_range"))
     parsed = _load_run_dataset(run_id, filename, crop_range)
     return {"filename": filename, **parsed}
+
+
+@app.post("/api/subtract-background")
+async def subtract_background(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create a new timeseries by subtracting the selected spectrum from every row."""
+    run_id = str(payload.get("run_id", "")).strip()
+    filename = str(payload.get("filename", "")).strip()
+    source_folder = str(payload.get("source_folder", "")).strip()
+
+    if not run_id or not filename or not source_folder:
+        raise HTTPException(
+            status_code=400,
+            detail="run_id, filename, and source_folder are required",
+        )
+
+    try:
+        requested_time = float(payload["background_time"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail="background_time must be a number") from e
+    if not math.isfinite(requested_time):
+        raise HTTPException(status_code=400, detail="background_time must be finite")
+
+    source_dir = Path(source_folder)
+    if not source_dir.is_dir():
+        raise HTTPException(status_code=400, detail="source_folder is not a valid directory")
+
+    parsed = _load_run_dataset(run_id, filename)
+    wavenumbers = np.asarray(parsed["wavenumbers"], dtype=float)
+    time_axis = np.asarray(parsed["time"], dtype=float)
+    spectra = np.asarray(parsed["spectra"], dtype=float)
+    if not time_axis.size or spectra.ndim != 2 or spectra.shape[0] != time_axis.size:
+        raise HTTPException(status_code=400, detail="Dataset contains no usable spectra")
+
+    background_index = int(np.argmin(np.abs(time_axis - requested_time)))
+    background_time = float(time_axis[background_index])
+    subtracted = spectra - spectra[background_index]
+
+    run_dir = RUNS_DIR / run_id
+    output_filename = _available_subtracted_filename(
+        run_dir,
+        source_dir,
+        Path(filename).stem,
+        background_time,
+    )
+    run_target = run_dir / output_filename
+    source_target = source_dir / output_filename
+
+    try:
+        _write_timeseries_txt(run_target, wavenumbers, time_axis, subtracted)
+        if source_target.resolve() != run_target.resolve():
+            shutil.copy2(run_target, source_target)
+    except Exception as e:
+        run_target.unlink(missing_ok=True)
+        source_target.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save subtracted spectrum: {e}") from e
+
+    return {
+        "filename": output_filename,
+        "background_time": background_time,
+        "source_path": str(source_target),
+    }
 
 
 def _trapz_area(x: np.ndarray, y: np.ndarray) -> float:

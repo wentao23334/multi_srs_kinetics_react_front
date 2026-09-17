@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { KineticsPlot } from '../plots/KineticsPlot';
+import { SingleSpectrumPlot } from '../plots/SingleSpectrumPlot';
 import { WaterfallPlot } from '../plots/WaterfallPlot';
-import { COLOR_SCALE_NAMES } from '../../lib/workflowUtils';
+import { COLOR_SCALE_NAMES, getNearestValueFromAxis } from '../../lib/workflowUtils';
 import type { GetDatasetResponse } from '../../types/api';
 import type { IntegrationCacheEntry, NumericRange } from '../../types/workflow';
 
@@ -13,6 +15,7 @@ interface MainWorkspaceProps {
   onSelectWaterfallFile: (filename: string) => void;
   onSelectKineticsFile: (filename: string) => void;
   currentDataset: GetDatasetResponse | null;
+  currentKineticsDataset: GetDatasetResponse | null;
   currentIntegrationData: IntegrationCacheEntry | null;
   fitRange: NumericRange | null;
   onFitRangeChange: (filename: string, range: NumericRange) => void;
@@ -28,6 +31,10 @@ interface MainWorkspaceProps {
   onWaterfallTimeRangeInputCommit: () => void;
   waterfallColorScheme: string;
   onWaterfallColorSchemeChange: (value: string) => void;
+  spectralBaselineCorrectionEnabled: boolean;
+  spectralBaselineXRange: NumericRange | null;
+  subtractBackgroundPending: boolean;
+  onSubtractBackground: (filename: string, time: number) => void;
   onVisibleTimeRangeChange: (filename: string, range: NumericRange) => void;
   onIntegrationRangeChange: (range: [number, number], shouldDebounce: boolean) => void;
 }
@@ -77,6 +84,7 @@ export function MainWorkspace({
   onSelectWaterfallFile,
   onSelectKineticsFile,
   currentDataset,
+  currentKineticsDataset,
   currentIntegrationData,
   fitRange,
   onFitRangeChange,
@@ -92,9 +100,30 @@ export function MainWorkspace({
   onWaterfallTimeRangeInputCommit,
   waterfallColorScheme,
   onWaterfallColorSchemeChange,
+  spectralBaselineCorrectionEnabled,
+  spectralBaselineXRange,
+  subtractBackgroundPending,
+  onSubtractBackground,
   onVisibleTimeRangeChange,
   onIntegrationRangeChange,
 }: MainWorkspaceProps) {
+  const [spectrumSelection, setSpectrumSelection] = useState<{
+    filename: string;
+    time: number;
+  } | null>(null);
+  const selectedSpectrumTime = currentKineticsDataset?.time.length
+    ? getNearestValueFromAxis(
+        currentKineticsDataset.time,
+        spectrumSelection?.filename === currentKineticsDataset.filename
+          ? spectrumSelection.time
+          : currentKineticsDataset.time[0],
+      )
+    : null;
+  const handleSelectedSpectrumTimeChange = (time: number) => {
+    if (!currentKineticsDataset) return;
+    setSpectrumSelection({ filename: currentKineticsDataset.filename, time });
+  };
+
   return (
     <main className="relative flex h-full flex-1 flex-col overflow-hidden bg-transparent">
       <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/[0.04] bg-black/15 px-8 backdrop-blur-md">
@@ -187,6 +216,8 @@ export function MainWorkspace({
               maxLines={waterfallMaxLines}
               timeRangeInput={waterfallAppliedTimeRangeInput}
               colorScheme={waterfallColorScheme}
+              baselineCorrectionEnabled={spectralBaselineCorrectionEnabled}
+              baselineXRange={spectralBaselineXRange}
               onVisibleTimeRangeChange={onVisibleTimeRangeChange}
               onIntegrationRangeChange={onIntegrationRangeChange}
             />
@@ -210,6 +241,55 @@ export function MainWorkspace({
               integrationData={currentIntegrationData}
               fitRange={fitRange}
               onFitRangeChange={onFitRangeChange}
+              selectedSpectrumTime={selectedSpectrumTime}
+              onSelectedSpectrumTimeChange={handleSelectedSpectrumTimeChange}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-6 backdrop-blur-xl transition-all hover:bg-white/[0.05] hover:border-white/[0.10]">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <h3 className="text-base font-bold text-white/90">Single Spectrum</h3>
+            <div className="flex flex-col items-end gap-2">
+              {selectedSpectrumTime !== null && (
+                <span className="rounded-full border border-red-400/30 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-300">
+                  t = {selectedSpectrumTime.toFixed(4)}
+                </span>
+              )}
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={subtractBackgroundPending}
+                  disabled={
+                    subtractBackgroundPending ||
+                    !currentKineticsDataset ||
+                    selectedSpectrumTime === null
+                  }
+                  onChange={(event) => {
+                    if (
+                      event.target.checked &&
+                      currentKineticsDataset &&
+                      selectedSpectrumTime !== null
+                    ) {
+                      onSubtractBackground(
+                        currentKineticsDataset.filename,
+                        selectedSpectrumTime,
+                      );
+                    }
+                  }}
+                  className="h-3.5 w-3.5 rounded border-white/20 bg-black/30 accent-red-500"
+                />
+                <span>{subtractBackgroundPending ? 'Subtracting…' : 'Subtract Background'}</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="h-[360px]">
+            <SingleSpectrumPlot
+              dataset={currentKineticsDataset}
+              selectedTime={selectedSpectrumTime}
+              baselineCorrectionEnabled={spectralBaselineCorrectionEnabled}
+              baselineXRange={spectralBaselineXRange}
             />
           </div>
         </section>

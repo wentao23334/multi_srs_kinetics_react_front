@@ -13,6 +13,7 @@ import {
   DEFAULT_FIGURE_SETTINGS,
   emptyFitFigureUrls,
   formatCompactNumber,
+  getNearestValueFromAxis,
   getSpectraValueRange,
   hasRenderedFitFigures,
   normalizeSeriesPair,
@@ -20,6 +21,7 @@ import {
   parseRangeInput,
   runFitsForFiles,
   sampleColors,
+  subtractSpectrumBaseline,
   resolveHeatmapColorScale,
   updateOverlapTimeSelection,
   withFitComparisonUrls,
@@ -44,6 +46,7 @@ test('range and offset parsers normalize valid input and reject bad input', () =
   assert.deepEqual(parseOffsetInput('bad'), [0, 0]);
   assert.equal(formatCompactNumber(0.0000123456), '0.0000123456');
   assert.equal(formatCompactNumber(123.456789), '123.457');
+  assert.equal(getNearestValueFromAxis([0, 1.5, 4], 2), 1.5);
 });
 
 test('color helpers keep selected manual colors available', () => {
@@ -118,6 +121,16 @@ test('spectra value range follows the visible heatmap time range', () => {
     estimateOverlapScale({ start: -1, end: 5 }, [0, 1, 2], { start: 0, end: 2 }),
     0.13333333333333333,
   );
+});
+
+test('spectral baseline correction clamps an oversized x range to the data', () => {
+  const corrected = subtractSpectrumBaseline(
+    [1000, 1100, 1200, 1300, 1400],
+    [10, 12, 20, 30, 40],
+    { start: 0, end: 5000 },
+  );
+
+  assert.deepEqual(corrected, [-4, -2, 6, 16, 26]);
 });
 
 test('normalization and fit figure payload preserve expected fields', () => {

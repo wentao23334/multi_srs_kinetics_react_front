@@ -61,6 +61,7 @@ export const DEFAULT_FIGURE_SETTINGS: FigureSettingsState = {
     xRangeInput: '',
     yRangeInput: '',
     zRangeInput: '',
+    baselineCorrectionEnabled: false,
     overlapEnabled: false,
     overlapCount: 10,
     overlapScaleInput: '',
@@ -235,9 +236,43 @@ export function updateOverlapTimeSelection(
   return current;
 }
 
+export interface SpectrumBaselineOptions {
+  enabled: boolean;
+  xRange: NumericRange | null;
+}
+
+export function subtractSpectrumBaseline(
+  wavenumbers: number[],
+  spectrum: number[],
+  xRange: NumericRange | null,
+) {
+  const finiteWavenumbers = wavenumbers.filter(Number.isFinite);
+  if (!finiteWavenumbers.length || !spectrum.length) return spectrum.slice();
+
+  const dataStart = Math.min(...finiteWavenumbers);
+  const dataEnd = Math.max(...finiteWavenumbers);
+  let start = xRange ? Math.max(Math.min(xRange.start, xRange.end), dataStart) : dataStart;
+  let end = xRange ? Math.min(Math.max(xRange.start, xRange.end), dataEnd) : dataEnd;
+  if (start > end) {
+    start = dataStart;
+    end = dataEnd;
+  }
+
+  const midpoint = (start + end) / 2;
+  const referenceValues = spectrum.filter((value, index) => {
+    const x = wavenumbers[index];
+    return Number.isFinite(value) && Number.isFinite(x) && x >= start && x <= midpoint;
+  });
+  if (!referenceValues.length) return spectrum.slice();
+
+  const baseline = referenceValues.reduce((sum, value) => sum + value, 0) / referenceValues.length;
+  return spectrum.map((value) => (Number.isFinite(value) ? value - baseline : value));
+}
+
 export function getSpectraValueRange(
   dataset: GetDatasetResponse | null,
   timeRange: NumericRange | null,
+  baselineCorrection?: SpectrumBaselineOptions,
 ): NumericRange | null {
   if (!dataset) return null;
 
@@ -247,7 +282,14 @@ export function getSpectraValueRange(
     const timeValue = dataset.time[rowIndex];
     if (timeRange && (timeValue < timeRange.start || timeValue > timeRange.end)) continue;
 
-    for (const value of dataset.spectra[rowIndex]) {
+    const spectrum = baselineCorrection?.enabled
+      ? subtractSpectrumBaseline(
+          dataset.wavenumbers,
+          dataset.spectra[rowIndex],
+          baselineCorrection.xRange,
+        )
+      : dataset.spectra[rowIndex];
+    for (const value of spectrum) {
       if (value < minValue) minValue = value;
       if (value > maxValue) maxValue = value;
     }
@@ -445,6 +487,7 @@ export function buildWaterfallTracePayload(
   maxLines: number,
   timeRangeInput: string,
   colorScheme: string,
+  baselineCorrection?: SpectrumBaselineOptions,
 ): WaterfallTraceResult {
   const totalFrames = dataset.spectra.length;
   const order = Array.from({ length: totalFrames }, (_, i) => i).sort(
@@ -471,12 +514,21 @@ export function buildWaterfallTracePayload(
   };
 
   const waterfallColors = sampleColors(colorScheme || 'None', Math.max(frameIdx.length, 1));
-  const traces = frameIdx.map((idx, stackIdx) => ({
-    x: dataset.wavenumbers,
-    y: dataset.spectra[idx].map((value) => value + stackIdx * gap),
-    color: waterfallColors[stackIdx % waterfallColors.length],
-    label: `t=${dataset.time[idx].toFixed(4)}`,
-  }));
+  const traces = frameIdx.map((idx, stackIdx) => {
+    const spectrum = baselineCorrection?.enabled
+      ? subtractSpectrumBaseline(
+          dataset.wavenumbers,
+          dataset.spectra[idx],
+          baselineCorrection.xRange,
+        )
+      : dataset.spectra[idx];
+    return {
+      x: dataset.wavenumbers,
+      y: spectrum.map((value) => value + stackIdx * gap),
+      color: waterfallColors[stackIdx % waterfallColors.length],
+      label: `t=${dataset.time[idx].toFixed(4)}`,
+    };
+  });
 
   return { traces, visibleRange };
 }

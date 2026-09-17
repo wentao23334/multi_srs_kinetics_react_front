@@ -17,13 +17,22 @@ from backend.app.main import (
     RUNS_DIR,
     _kinetics_model,
     _save_spectral_heatmap_figure,
+    _subtract_spectral_baselines,
     export_svg_figures,
     fit_kinetics,
     integrate,
+    subtract_background,
 )
 
 
 async def main() -> None:
+    corrected = _subtract_spectral_baselines(
+        np.asarray([1000, 1100, 1200, 1300, 1400], dtype=float),
+        np.asarray([[10, 12, 20, 30, 40], [20, 22, 30, 40, 50]], dtype=float),
+        (0, 5000),
+    )
+    assert np.allclose(corrected, [[-4, -2, 6, 16, 26], [-4, -2, 6, 16, 26]])
+
     integration = await integrate(
         {
             "wavenumbers": [1000, 1100, 1200],
@@ -47,6 +56,34 @@ async def main() -> None:
     assert math.isfinite(fit["params"]["Tau"])
     assert fit["params"]["Tau"] > 0
     assert fit["metrics"]["r2"] > 0.99
+
+    background_run_id = "backend_smoke_subtract_background"
+    background_run_dir = RUNS_DIR / background_run_id
+    background_run_dir.mkdir(parents=True, exist_ok=True)
+    original_text = "\t1000\t1100\t1200\n0\t1\t2\t3\n1\t4\t6\t8\n2\t9\t12\t15\n"
+    try:
+        (background_run_dir / "sample.txt").write_text(original_text, encoding="utf-8")
+        with TemporaryDirectory() as source_dir:
+            result = await subtract_background(
+                {
+                    "run_id": background_run_id,
+                    "filename": "sample.srs",
+                    "source_folder": source_dir,
+                    "background_time": 0.9,
+                }
+            )
+            assert result["filename"] == "sample_sub_1.txt"
+            assert result["background_time"] == 1.0
+            assert Path(result["source_path"]).is_file()
+            derived = np.loadtxt(
+                background_run_dir / result["filename"],
+                delimiter="\t",
+                skiprows=1,
+            )
+            assert np.allclose(derived[:, 1:], [[-3, -4, -5], [0, 0, 0], [5, 6, 7]])
+            assert (background_run_dir / "sample.txt").read_text(encoding="utf-8") == original_text
+    finally:
+        shutil.rmtree(background_run_dir, ignore_errors=True)
 
     with TemporaryDirectory() as tmpdir:
         target = Path(tmpdir) / "heatmap.png"

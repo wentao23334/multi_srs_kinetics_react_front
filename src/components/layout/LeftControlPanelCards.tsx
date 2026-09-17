@@ -389,23 +389,34 @@ export function SpectralFigureCard({
             className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
           />
         </label>
-        <label className="flex cursor-pointer items-center gap-2 pt-1 text-xs font-medium text-slate-300">
-          <input
-            type="checkbox"
-            checked={settings.overlapEnabled}
-            onChange={(event) => {
-              onChange('overlapEnabled', event.target.checked);
-              if (event.target.checked && !settings.overlapTimes.length) {
-                resetOverlapTimes();
-              }
-              if (event.target.checked) {
-                fillDefaultOverlapScale();
-              }
-            }}
-            className="h-4 w-4 rounded border-white/20 bg-black/30 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0 transition-all"
-          />
-          <span>Overlap</span>
-        </label>
+        <div className="grid grid-cols-2 gap-3 pt-1">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+            <input
+              type="checkbox"
+              checked={settings.overlapEnabled}
+              onChange={(event) => {
+                onChange('overlapEnabled', event.target.checked);
+                if (event.target.checked && !settings.overlapTimes.length) {
+                  resetOverlapTimes();
+                }
+                if (event.target.checked) {
+                  fillDefaultOverlapScale();
+                }
+              }}
+              className="h-4 w-4 rounded border-white/20 bg-black/30 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0 transition-all"
+            />
+            <span>Overlap</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+            <input
+              type="checkbox"
+              checked={settings.baselineCorrectionEnabled}
+              onChange={(event) => onChange('baselineCorrectionEnabled', event.target.checked)}
+              className="h-4 w-4 rounded border-white/20 bg-black/30 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0 transition-all"
+            />
+            <span>Baseline</span>
+          </label>
+        </div>
 
         {settings.overlapEnabled && (
           <div className="space-y-3 rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3">

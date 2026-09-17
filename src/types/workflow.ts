@@ -23,6 +23,7 @@ export interface SpectralFigureSettings {
   xRangeInput: string;
   yRangeInput: string;
   zRangeInput: string;
+  baselineCorrectionEnabled: boolean;
   overlapEnabled: boolean;
   overlapCount: number;
   overlapScaleInput: string;

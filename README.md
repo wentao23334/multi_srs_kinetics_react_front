@@ -59,8 +59,12 @@ npm install --legacy-peer-deps
 #### Windows / PowerShell
 
 ```powershell
-cd D:\multi_srs_kinetics_react_front
+cd D:\github_projects\multi_srs_kinetics_react_front
+
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+python -m pip install -r requirements.txt
 python dev.py
 ```
 
@@ -86,7 +90,7 @@ python3 dev.py
 #### Windows / PowerShell
 
 ```powershell
-cd D:\multi_srs_kinetics_react_front
+cd D:\github_projects\multi_srs_kinetics_react_front
 .\.venv\Scripts\Activate.ps1
 python start.py
 ```

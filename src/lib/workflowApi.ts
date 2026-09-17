@@ -21,6 +21,8 @@ import type {
   RenderSpectralFigureResponse,
   SaveRunRecordRequest,
   SaveRunRecordResponse,
+  SubtractBackgroundRequest,
+  SubtractBackgroundResponse,
 } from '../types/api';
 
 async function postData<Response, Request>(url: string, payload: Request): Promise<Response> {
@@ -50,6 +52,12 @@ export const workflowApi = {
 
   getDataset: (payload: GetDatasetRequest) =>
     postData<GetDatasetResponse, GetDatasetRequest>('/get_dataset', payload),
+
+  subtractBackground: (payload: SubtractBackgroundRequest) =>
+    postData<SubtractBackgroundResponse, SubtractBackgroundRequest>(
+      '/subtract-background',
+      payload,
+    ),
 
   integrate: (payload: IntegrateRequest) =>
     postData<IntegrateResponse, IntegrateRequest>('/integrate', payload),

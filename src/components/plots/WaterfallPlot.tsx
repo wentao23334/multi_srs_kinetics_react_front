@@ -39,6 +39,8 @@ interface WaterfallPlotProps {
   maxLines: number;
   timeRangeInput: string;
   colorScheme: string;
+  baselineCorrectionEnabled: boolean;
+  baselineXRange: NumericRange | null;
   onVisibleTimeRangeChange: (filename: string, range: NumericRange) => void;
   onIntegrationRangeChange: (range: [number, number], shouldDebounce: boolean) => void;
 }
@@ -50,6 +52,8 @@ export function WaterfallPlot({
   maxLines,
   timeRangeInput,
   colorScheme,
+  baselineCorrectionEnabled,
+  baselineXRange,
   onVisibleTimeRangeChange,
   onIntegrationRangeChange,
 }: WaterfallPlotProps) {
@@ -115,6 +119,7 @@ export function WaterfallPlot({
       maxLines,
       timeRangeInput,
       colorScheme,
+      { enabled: baselineCorrectionEnabled, xRange: baselineXRange },
     );
     emitVisibleTimeRangeChange(dataset.filename, visibleRange);
 
@@ -219,6 +224,8 @@ export function WaterfallPlot({
     };
   }, [
     captureAxisMeta,
+    baselineCorrectionEnabled,
+    baselineXRange,
     colorScheme,
     dataset,
     emitVisibleTimeRangeChange,

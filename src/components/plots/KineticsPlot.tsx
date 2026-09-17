@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { NumericRange, IntegrationCacheEntry } from '../../types/workflow';
 import { usePlotly } from '../../hooks/usePlotly';
-import { getSnappedRange } from '../../lib/workflowUtils';
+import { getNearestValueFromAxis, getSnappedRange } from '../../lib/workflowUtils';
 
 type PlotlyAxis = {
   _offset?: unknown;
@@ -37,6 +37,8 @@ interface KineticsPlotProps {
   integrationData: IntegrationCacheEntry | null;
   fitRange: NumericRange | null;
   onFitRangeChange: (filename: string, range: NumericRange) => void;
+  selectedSpectrumTime: number | null;
+  onSelectedSpectrumTimeChange: (time: number) => void;
 }
 
 export function KineticsPlot({
@@ -44,6 +46,8 @@ export function KineticsPlot({
   integrationData,
   fitRange,
   onFitRangeChange,
+  selectedSpectrumTime,
+  onSelectedSpectrumTimeChange,
 }: KineticsPlotProps) {
   const plotRef = useRef<HTMLDivElement | null>(null);
   const rangeRef = useRef<NumericRange | null>(fitRange);
@@ -300,6 +304,43 @@ export function KineticsPlot({
     window.addEventListener('pointerup', onUp);
   };
 
+  const startSpectrumTimeDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const activeAxisMeta = captureAxisMeta() ?? axisMetaRef.current ?? axisMeta;
+    if (!activeAxisMeta || !plotRef.current || !integrationData) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    const plotDiv = plotRef.current;
+    const updateTime = (clientX: number) => {
+      const currentAxisMeta = axisMetaRef.current ?? activeAxisMeta;
+      const rect = plotDiv.getBoundingClientRect();
+      const pixel = clientX - rect.left - currentAxisMeta.offset;
+      const clamped = Math.max(0, Math.min(currentAxisMeta.length, pixel));
+      const rawTime = Number(currentAxisMeta.p2l(clamped));
+      onSelectedSpectrumTimeChange(getNearestValueFromAxis(integrationData.time, rawTime));
+    };
+
+    const onMove = (moveEvent: PointerEvent) => updateTime(moveEvent.clientX);
+    const onUp = (upEvent: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      updateTime(upEvent.clientX);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const stepSpectrumTime = (direction: -1 | 1) => {
+    if (!integrationData?.time.length || selectedSpectrumTime === null) return;
+    const timeAxis = Array.from(new Set(integrationData.time)).sort((a, b) => a - b);
+    const currentTime = getNearestValueFromAxis(timeAxis, selectedSpectrumTime);
+    const currentIndex = timeAxis.indexOf(currentTime);
+    const nextIndex = Math.max(0, Math.min(timeAxis.length - 1, currentIndex + direction));
+    onSelectedSpectrumTimeChange(timeAxis[nextIndex]);
+  };
+
   if (errorMessage) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-sm text-slate-400">
@@ -336,6 +377,27 @@ export function KineticsPlot({
             );
           })}
         </>
+      )}
+      {axisMeta && selectedSpectrumTime !== null && (
+        <div
+          className="absolute top-0 bottom-0 z-30 flex w-5 -translate-x-1/2 cursor-col-resize justify-center"
+          style={{ left: axisMeta.offset + axisMeta.l2p(selectedSpectrumTime) }}
+          onPointerDown={startSpectrumTimeDrag}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            stepSpectrumTime(event.key === 'ArrowLeft' ? -1 : 1);
+          }}
+          role="slider"
+          tabIndex={0}
+          aria-label="Selected spectrum time"
+          aria-valuemin={Math.min(...integrationData.time)}
+          aria-valuemax={Math.max(...integrationData.time)}
+          aria-valuenow={selectedSpectrumTime}
+          title={`Selected spectrum time: ${selectedSpectrumTime.toFixed(4)}`}
+        >
+          <div className="h-full w-0 border-l-2 border-dashed border-red-500" />
+        </div>
       )}
     </div>
   );

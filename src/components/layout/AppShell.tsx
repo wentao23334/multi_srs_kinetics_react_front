@@ -15,6 +15,7 @@ import {
   getSnappedRange,
   hasRenderedFitFigures,
   isFitError,
+  parseRangeInput,
   resolveHeatmapColorScale,
   runFitsForFiles,
   sampleColors,
@@ -120,6 +121,7 @@ export function AppShell() {
   const [keepRecord, setKeepRecord] = useState(false);
 
   const [extractPending, setExtractPending] = useState(false);
+  const [subtractBackgroundPending, setSubtractBackgroundPending] = useState(false);
 
   const [mode, setMode] = useState<'fast' | 'realtime'>('realtime');
   const [defaultStartWn, setDefaultStartWn] = useState(1150);
@@ -162,6 +164,7 @@ export function AppShell() {
     setActiveKineticsFile,
     currentDataset,
     setCurrentDataset,
+    datasetCache,
     integrationCache,
     fitRanges,
     setFitRanges,
@@ -217,6 +220,8 @@ export function AppShell() {
 
   const currentIntegrationData =
     (activeKineticsFile && integrationCache[activeKineticsFile]) || null;
+  const currentKineticsDataset =
+    (activeKineticsFile && datasetCache[activeKineticsFile]) || null;
 
   const analysisCropRange = useMemo(
     () => resolveOptionalCropRange(cropStartWnInput, cropEndWnInput, defaultStartWn, defaultEndWn),
@@ -262,6 +267,10 @@ export function AppShell() {
   );
 
   const currentDatasetFilename = currentDataset?.filename || null;
+  const spectralBaselineXRange = useMemo(
+    () => parseRangeInput(figureSettings.spectral.xRangeInput),
+    [figureSettings.spectral.xRangeInput],
+  );
 
   const spectralOverlapTimeRange = useMemo(() => {
     if (!currentDataset || currentDataset.filename !== activeWaterfallFile) return null;
@@ -271,10 +280,16 @@ export function AppShell() {
       waterfallMaxLines,
       waterfallAppliedTimeRangeInput,
       waterfallColorScheme,
+      {
+        enabled: figureSettings.spectral.baselineCorrectionEnabled,
+        xRange: spectralBaselineXRange,
+      },
     ).visibleRange;
   }, [
     activeWaterfallFile,
     currentDataset,
+    figureSettings.spectral.baselineCorrectionEnabled,
+    spectralBaselineXRange,
     waterfallAppliedTimeRangeInput,
     waterfallColorScheme,
     waterfallGap,
@@ -282,7 +297,10 @@ export function AppShell() {
   ]);
 
   const spectralOverlapScaleInputDefault = useMemo(() => {
-    const valueRange = getSpectraValueRange(currentDataset, spectralOverlapTimeRange);
+    const valueRange = getSpectraValueRange(currentDataset, spectralOverlapTimeRange, {
+      enabled: figureSettings.spectral.baselineCorrectionEnabled,
+      xRange: spectralBaselineXRange,
+    });
     const count = Math.max(1, Math.floor(Number(figureSettings.spectral.overlapCount) || 1));
     const times = figureSettings.spectral.overlapTimes.length === count
       ? figureSettings.spectral.overlapTimes
@@ -293,8 +311,10 @@ export function AppShell() {
     return scale === null ? '' : formatCompactNumber(scale);
   }, [
     currentDataset,
+    figureSettings.spectral.baselineCorrectionEnabled,
     figureSettings.spectral.overlapCount,
     figureSettings.spectral.overlapTimes,
+    spectralBaselineXRange,
     spectralOverlapTimeRange,
   ]);
 
@@ -436,7 +456,12 @@ export function AppShell() {
     }
   };
 
-  const selectWaterfallFile = async (filename: string, targetRunId = runId, force = false) => {
+  const selectWaterfallFile = async (
+    filename: string,
+    targetRunId = runId,
+    force = false,
+    recomputeGap = false,
+  ) => {
     if (!targetRunId) return;
     const loadSeq = waterfallLoadSeqRef.current + 1;
     waterfallLoadSeqRef.current = loadSeq;
@@ -451,7 +476,7 @@ export function AppShell() {
       if (loadSeq !== waterfallLoadSeqRef.current) return;
       setCurrentDataset(body);
 
-      if (waterfallGap === 0) {
+      if (waterfallGap === 0 || recomputeGap) {
         let minV = Infinity;
         let maxV = -Infinity;
         for (const row of body.spectra) {
@@ -481,16 +506,19 @@ export function AppShell() {
     if (!targetRunId) return;
     setActiveKineticsFile(filename);
     try {
-      await integrateDatasetForFile({
-        filename,
-        force,
-        targetRunId,
-        integrationRange: globalIntegrationRange,
-        baselineMode,
-        cropRange: analysisCropRange,
-      });
+      await Promise.all([
+        fetchDataset(filename, targetRunId, analysisCropRange, force),
+        integrateDatasetForFile({
+          filename,
+          force,
+          targetRunId,
+          integrationRange: globalIntegrationRange,
+          baselineMode,
+          cropRange: analysisCropRange,
+        }),
+      ]);
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to integrate ${filename}`));
+      toast.error(getErrorMessage(error, `Failed to load ${filename}`));
     }
   };
 
@@ -605,6 +633,41 @@ export function AppShell() {
   const handleIntegrationRangeChange = (range: [number, number], shouldDebounce: boolean) => {
     setGlobalIntegrationRange(range);
     void shouldDebounce;
+  };
+
+  const handleSubtractBackground = async (filename: string, backgroundTime: number) => {
+    if (!runId || !currentFolderPath || subtractBackgroundPending) return;
+
+    const confirmed = window.confirm(
+      `Subtract the spectrum at t = ${backgroundTime.toFixed(4)} from every spectrum in ${filename}?\n\nA new file will be created and the original will be kept.`,
+    );
+    if (!confirmed) return;
+
+    setSubtractBackgroundPending(true);
+    setVizStatusMsg(`Subtracting background from ${filename}…`);
+    try {
+      const body = await workflowApi.subtractBackground({
+        run_id: runId,
+        filename,
+        source_folder: currentFolderPath,
+        background_time: backgroundTime,
+      });
+      setExtractedFilenames((prev) => (
+        prev.includes(body.filename) ? prev : [...prev, body.filename]
+      ));
+      await selectWaterfallFile(body.filename, runId, true, true);
+      await selectKineticsFile(body.filename, true, runId);
+      markSpectralFigureStale(
+        `Background-subtracted file ${body.filename} is active. Render Spectral Figure again to refresh the right-hand image.`,
+      );
+      toast.success(`Created and loaded ${body.filename}.`);
+    } catch (error) {
+      const message = getErrorMessage(error, 'Background subtraction failed');
+      setVizStatusMsg(`Background subtraction error: ${message}`);
+      toast.error(message);
+    } finally {
+      setSubtractBackgroundPending(false);
+    }
   };
 
   const handleCropInputChange = (bound: 'start' | 'end', value: string) => {
@@ -801,6 +864,10 @@ export function AppShell() {
       waterfallMaxLines,
       waterfallAppliedTimeRangeInput,
       waterfallColorScheme,
+      {
+        enabled: figureSettings.spectral.baselineCorrectionEnabled,
+        xRange: spectralBaselineXRange,
+      },
     );
     const renderSettings = buildFigureRenderSettings();
     const settings = renderSettings.spectral;
@@ -826,6 +893,10 @@ export function AppShell() {
         crop_range: analysisCropRange,
         zmin: settings.zlim ? settings.zlim[0] : null,
         zmax: settings.zlim ? settings.zlim[1] : null,
+        baseline_correction: {
+          enabled: figureSettings.spectral.baselineCorrectionEnabled,
+          x_range: settings.xlim,
+        },
         overlap: figureSettings.spectral.overlapEnabled
           ? {
               enabled: true,
@@ -856,56 +927,14 @@ export function AppShell() {
     setSpectralFigureStatus(`Rendering spectral figure for ${filename}…`);
 
     try {
-      const dataset = currentDataset?.filename === filename
-        ? currentDataset
-        : await fetchDataset(filename, runId, analysisCropRange);
-      const { traces, visibleRange } = buildWaterfallTracePayload(
-        dataset,
-        waterfallGap,
-        waterfallMaxLines,
-        waterfallAppliedTimeRangeInput,
-        waterfallColorScheme,
-      );
-      const renderSettings = buildFigureRenderSettings();
-      const settings = renderSettings.spectral;
-      const overlapCount = Math.max(
-        1,
-        Math.floor(Number(figureSettings.spectral.overlapCount) || 1),
-      );
-      const overlapTimes = figureSettings.spectral.overlapTimes.length === overlapCount
-        ? figureSettings.spectral.overlapTimes
-        : buildEvenlySpacedValues(visibleRange.start, visibleRange.end, overlapCount);
-      const overlapScaleRaw = figureSettings.spectral.overlapScaleInput.trim()
-        ? Number(figureSettings.spectral.overlapScaleInput)
-        : Number(spectralOverlapScaleInputDefault);
-      const overlapScale = Number.isFinite(overlapScaleRaw) ? overlapScaleRaw : null;
+      const spectralPayload = await buildSpectralFigurePayload(filename);
       const body = await workflowApi.renderSpectralFigure({
         run_id: runId,
         filename,
         crop_range: analysisCropRange,
-        traces,
-        heatmap: {
-          color_scale: resolveHeatmapColorScale(waterfallColorScheme),
-          time_range: [visibleRange.start, visibleRange.end],
-          crop_range: analysisCropRange,
-          zmin: settings.zlim ? settings.zlim[0] : null,
-          zmax: settings.zlim ? settings.zlim[1] : null,
-          overlap: figureSettings.spectral.overlapEnabled
-            ? {
-                enabled: true,
-                times: overlapTimes.filter(Number.isFinite),
-                scale: overlapScale,
-                color: '#000000',
-              }
-            : null,
-        },
-        figure_settings: {
-          ...settings,
-          global: renderSettings.global,
-          reverse_wavenumber_axis: figureSettings.global.reverseWavenumberAxis,
-          title: settings.title || `SRS Waterfall — ${filename}`,
-          ...(settings.title ? {} : { title: '' }),
-        },
+        traces: spectralPayload.traces,
+        heatmap: spectralPayload.heatmap,
+        figure_settings: spectralPayload.figureSettings,
       });
       const nextFitFigureUrls = withSpectralFigureUrls(
         fitFigureUrls,
@@ -914,7 +943,7 @@ export function AppShell() {
       );
       setFitFigureUrls(nextFitFigureUrls);
       setSpectralFigureStatus(
-        `Rendered spectral figure for ${filename} (${formatRangeInput(visibleRange.start, visibleRange.end)}).`,
+        `Rendered spectral figure for ${filename} (${formatRangeInput(spectralPayload.visibleRange.start, spectralPayload.visibleRange.end)}).`,
       );
       await saveRunRecord({ fitFigureUrls: nextFitFigureUrls });
     } catch (error) {
@@ -1196,6 +1225,7 @@ export function AppShell() {
           onSelectWaterfallFile={(filename) => void selectWaterfallFile(filename)}
           onSelectKineticsFile={(filename) => void selectKineticsFile(filename)}
           currentDataset={currentDataset}
+          currentKineticsDataset={currentKineticsDataset}
           currentIntegrationData={currentIntegrationData}
           fitRange={activeKineticsFile ? fitRanges[activeKineticsFile] ?? null : null}
           onFitRangeChange={(filename, range) => void handleFitRangeChange(filename, range)}
@@ -1211,6 +1241,12 @@ export function AppShell() {
           onWaterfallTimeRangeInputCommit={handleWaterfallTimeRangeInputCommit}
           waterfallColorScheme={waterfallColorScheme}
           onWaterfallColorSchemeChange={handleWaterfallColorSchemeChange}
+          spectralBaselineCorrectionEnabled={figureSettings.spectral.baselineCorrectionEnabled}
+          spectralBaselineXRange={spectralBaselineXRange}
+          subtractBackgroundPending={subtractBackgroundPending}
+          onSubtractBackground={(filename, time) => {
+            void handleSubtractBackground(filename, time);
+          }}
           onVisibleTimeRangeChange={handleVisibleTimeRangeChange}
           onIntegrationRangeChange={handleIntegrationRangeChange}
         />

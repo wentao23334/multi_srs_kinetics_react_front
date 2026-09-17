@@ -36,6 +36,19 @@ export interface GetDatasetResponse {
   spectra: number[][];
 }
 
+export interface SubtractBackgroundRequest {
+  run_id: string;
+  filename: string;
+  source_folder: string;
+  background_time: number;
+}
+
+export interface SubtractBackgroundResponse {
+  filename: string;
+  background_time: number;
+  source_path: string;
+}
+
 export interface IntegrateRequest {
   run_id?: string;
   filename?: string;
@@ -155,6 +168,10 @@ export interface RenderSpectralFigureRequest {
     crop_range?: [number, number] | null;
     zmin?: number | null;
     zmax?: number | null;
+    baseline_correction?: {
+      enabled: boolean;
+      x_range: [number, number] | null;
+    };
     overlap?: {
       enabled: boolean;
       times: number[];

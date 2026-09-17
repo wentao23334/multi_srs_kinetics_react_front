@@ -116,6 +116,7 @@ export function useDatasetWorkflow() {
     setActiveKineticsFile,
     currentDataset,
     setCurrentDataset,
+    datasetCache,
     integrationCache,
     fitRanges,
     setFitRanges,
