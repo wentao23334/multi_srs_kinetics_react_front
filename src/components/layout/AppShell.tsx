@@ -1139,11 +1139,11 @@ export function AppShell() {
   return (
     <div
       ref={layoutRef}
-      className={`flex h-screen w-full overflow-hidden bg-paper text-ink ${
+      className={`app-shell flex h-screen w-full overflow-hidden bg-paper text-ink ${
         draggingSide ? 'select-none' : ''
       }`}
     >
-      <div className="shrink-0" style={{ width: paneWidths.left }}>
+      <div className="app-pane shrink-0" style={{ width: paneWidths.left }}>
         <LeftControlPanel
           currentStep={currentStep}
           keepRecord={keepRecord}
@@ -1205,7 +1205,7 @@ export function AppShell() {
         active={draggingSide === 'left'}
         onPointerDown={handleResizeStart('left')}
       />
-      <div className="min-w-0 flex-1">
+      <div className="app-pane min-w-0 flex-1">
         <MainWorkspace
           currentStep={currentStep}
           vizStatusMsg={vizStatusMsg}
@@ -1246,7 +1246,7 @@ export function AppShell() {
         active={draggingSide === 'right'}
         onPointerDown={handleResizeStart('right')}
       />
-      <div className="shrink-0" style={{ width: paneWidths.right }}>
+      <div className="app-pane shrink-0" style={{ width: paneWidths.right }}>
         <RightPreviewPanel
           fitSummaryMsg={fitSummaryMsg}
           fitStatusBadge={fitStatusBadge}

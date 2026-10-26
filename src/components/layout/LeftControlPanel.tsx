@@ -208,7 +208,7 @@ export function LeftControlPanel({
   };
 
   return (
-    <aside className="flex h-full w-full min-w-0 flex-col border-r border-rule bg-paper-2">
+    <aside className="rail-pane flex h-full w-full min-w-0 flex-col border-r border-rule bg-paper-2">
       <div className="border-b-2 border-rule-2 p-6 pb-5">
         <h2 className="font-display text-xl font-semibold tracking-display text-ink">
           Multi SRS Studio
@@ -225,7 +225,7 @@ export function LeftControlPanel({
         </label>
       </div>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-6">
+      <div className="rail-scroll flex-1 space-y-6 overflow-y-auto p-6">
         <section
           className="step-section"
           data-locked={currentStep !== 1 ? 'true' : 'false'}

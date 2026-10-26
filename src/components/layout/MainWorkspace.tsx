@@ -127,7 +127,7 @@ export function MainWorkspace({
   };
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col">
+    <main className="stage-pane relative flex h-full min-w-0 flex-1 flex-col">
       <header className="flex h-16 shrink-0 items-center justify-between gap-6 border-b border-rule px-8">
         <div className="flex items-center text-sm">
           {STAGE_STEPS.map((step, index) => {
@@ -136,7 +136,7 @@ export function MainWorkspace({
             return (
               <span key={step.label} className={`flex items-center ${index > 0 ? 'border-l border-rule pl-4 ml-4' : ''}`}>
                 <span
-                  className={`inline-flex items-baseline gap-1.5 border-b-2 pb-1 ${
+                  className={`inline-flex items-baseline border-b-2 pb-1 ${
                     current
                       ? 'border-accent text-ink'
                       : reached
@@ -144,7 +144,6 @@ export function MainWorkspace({
                         : 'border-transparent text-muted'
                   }`}
                 >
-                  <span className="font-outlier text-xs tabular-nums">{step.reached}.</span>
                   {step.label}
                 </span>
               </span>
@@ -154,11 +153,11 @@ export function MainWorkspace({
         <p className="status-line max-w-[30rem] truncate text-right" role="status">{vizStatusMsg}</p>
       </header>
 
-      <div className="flex-1 space-y-10 overflow-y-auto p-8">
+      <div className="stage-scroll flex-1 space-y-10 overflow-y-auto p-8">
         <section>
           <div className="stage-head">
             <h3 className="stage-title">SRS Waterfall</h3>
-            <div className="flex flex-wrap items-end gap-4">
+            <div className="stage-controls mt-4">
               <label className="field">
                 <span className="field-label">Gap</span>
                 <input

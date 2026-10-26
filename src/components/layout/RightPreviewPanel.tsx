@@ -57,24 +57,24 @@ export function RightPreviewPanel({
   spectralFigureStatus,
 }: RightPreviewPanelProps) {
   return (
-    <aside className="flex h-full w-full min-w-0 flex-col border-l border-rule bg-paper-2">
+    <aside className="review-pane flex h-full w-full min-w-0 flex-col border-l border-rule bg-paper-2">
       <header className="border-b-2 border-rule-2 px-6 py-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+        <div>
+          <div className="flex items-start justify-between gap-3">
             <h3 className="font-display text-lg font-semibold tracking-display text-ink">
               Global Fit Review
             </h3>
-            <p className="status-line mt-1">{fitSummaryMsg}</p>
+            <button
+              type="button"
+              onClick={onRunAllFits}
+              disabled={!extractedFilenames.length || runFitsPending}
+              aria-busy={runFitsPending}
+              className="btn shrink-0"
+            >
+              {runFitsPending ? 'Running…' : 'Run All Fits'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onRunAllFits}
-            disabled={!extractedFilenames.length || runFitsPending}
-            aria-busy={runFitsPending}
-            className="btn shrink-0"
-          >
-            {runFitsPending ? 'Running…' : 'Run All Fits'}
-          </button>
+          <p className="status-line mt-2">{fitSummaryMsg}</p>
         </div>
         <div className="mt-4 flex items-center justify-between gap-3">
           <span className="status-chip">{fitStatusBadge}</span>
@@ -88,7 +88,7 @@ export function RightPreviewPanel({
         )}
       </header>
 
-      <div className="flex-1 space-y-8 overflow-y-auto p-6">
+      <div className="review-scroll flex-1 space-y-8 overflow-y-auto p-6">
         <Plate
           title="Peak Area-Time Overlay"
           caption="Run fitting to generate result images."
