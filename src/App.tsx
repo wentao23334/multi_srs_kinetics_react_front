@@ -5,7 +5,7 @@ function App() {
   return (
     <>
       <AppShell />
-      <Toaster theme="dark" richColors position="top-right" />
+      <Toaster theme="light" position="top-right" />
     </>
   )
 }

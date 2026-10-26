@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { formatNumber, isFitError } from '../../lib/workflowUtils';
 import type { FitFigureUrlsState, FitResultMap } from '../../types/workflow';
 
@@ -16,6 +17,31 @@ interface RightPreviewPanelProps {
   spectralFigureStatus: string;
 }
 
+function Plate({
+  title,
+  caption,
+  src,
+  alt,
+}: {
+  title: string;
+  caption?: string;
+  src?: string;
+  alt: string;
+}) {
+  return (
+    <div>
+      <h4 className="mb-2 font-display text-sm font-semibold text-ink">{title}</h4>
+      <figure className="plate aspect-[4/3] w-full overflow-hidden">
+        {src ? (
+          <img src={src} alt={alt} className="h-full w-full object-contain" />
+        ) : (
+          <div className="plate-empty">{caption || 'Nothing rendered yet.'}</div>
+        )}
+      </figure>
+    </div>
+  );
+}
+
 export function RightPreviewPanel({
   fitSummaryMsg,
   fitStatusBadge,
@@ -31,117 +57,78 @@ export function RightPreviewPanel({
   spectralFigureStatus,
 }: RightPreviewPanelProps) {
   return (
-    <aside className="relative flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-white/[0.04] bg-black/40 backdrop-blur-xl">
-      <header className="relative z-10 border-b border-white/[0.04] bg-black/15 px-6 py-5 backdrop-blur-sm">
+    <aside className="flex h-full w-full min-w-0 flex-col border-l border-rule bg-paper-2">
+      <header className="border-b-2 border-rule-2 px-6 py-5">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Fitting Results</p>
-            <h3 className="mt-1 text-lg font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-200 to-slate-400">
+          <div className="min-w-0">
+            <h3 className="font-display text-lg font-semibold tracking-display text-ink">
               Global Fit Review
             </h3>
-            <p className="mt-1 text-xs font-medium text-slate-400/80">{fitSummaryMsg}</p>
+            <p className="status-line mt-1">{fitSummaryMsg}</p>
           </div>
           <button
+            type="button"
             onClick={onRunAllFits}
             disabled={!extractedFilenames.length || runFitsPending}
-            className="rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-[0_0_15px_rgba(59,130,246,0.2)] transition-all hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(59,130,246,0.4)] active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+            aria-busy={runFitsPending}
+            className="btn shrink-0"
           >
             {runFitsPending ? 'Running…' : 'Run All Fits'}
           </button>
         </div>
-        <div className="mt-5 flex items-center justify-between text-xs font-medium">
-          <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-slate-300 shadow-inner">
-            {fitStatusBadge}
-          </span>
-          <span className="text-slate-400">{fitResultCount}</span>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span className="status-chip">{fitStatusBadge}</span>
+          <span className="readout-meta">{fitResultCount}</span>
         </div>
-        <p className="mt-2 text-[11px] font-medium text-slate-500">{fitNormalizedMeta}</p>
+        <p className="status-line mt-2">{fitNormalizedMeta}</p>
         {fitFiguresStale && (
-          <p className="mt-2 text-[11px] font-medium text-amber-300/80">
-            Current fit images are from the previous settings. Click Run All Fits to refresh them.
+          <p className="status-line mt-2 border-l-2 border-accent pl-2 text-ink-2">
+            Current fit images are from the previous settings. Run all fits to refresh them.
           </p>
         )}
       </header>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-6 scroll-smooth">
-        <div>
-          <h4 className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Peak Area-Time Overlay</h4>
-          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-black/35 shadow-inner">
-            {fitFigureUrls.overlay ? (
-              <img
-                src={fitFigureUrls.overlay}
-                alt="Peak Area-Time Overlay"
-                className="h-full w-full object-contain mix-blend-screen"
-              />
-            ) : (
-              <div className="px-6 text-center text-xs font-medium text-slate-500">
-                Run fitting to generate result images.
-              </div>
-            )}
-          </div>
-        </div>
+      <div className="flex-1 space-y-8 overflow-y-auto p-6">
+        <Plate
+          title="Peak Area-Time Overlay"
+          caption="Run fitting to generate result images."
+          src={fitFigureUrls.overlay || undefined}
+          alt="Peak area-time overlay"
+        />
+
+        <Plate
+          title="Cropped Normalized"
+          caption="Run fitting to generate result images."
+          src={fitFigureUrls.normalized || undefined}
+          alt="Cropped normalized fits"
+        />
 
         <div>
-          <h4 className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Cropped Normalized</h4>
-          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-black/35 shadow-inner">
-            {fitFigureUrls.normalized ? (
-              <img
-                src={fitFigureUrls.normalized}
-                alt="Cropped Normalized Fits"
-                className="h-full w-full object-contain mix-blend-screen"
-              />
-            ) : (
-              <div className="px-6 text-center text-xs font-medium text-slate-500">
-                Run fitting to generate result images.
-              </div>
-            )}
+          <div className="mb-2">
+            <h4 className="font-display text-sm font-semibold text-ink">Spectral Figure</h4>
+            <p className="status-line">{spectralFigureStatus}</p>
           </div>
-        </div>
-
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Spectral Figure</h4>
-            <span className="text-[11px] font-medium text-slate-500">{spectralFigureStatus}</span>
-          </div>
-          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-black/35 shadow-inner">
+          <figure className="plate aspect-[4/3] w-full overflow-hidden">
             {fitFigureUrls.spectral ? (
-              <img
-                src={fitFigureUrls.spectral}
-                alt="Waterfall spectral figure"
-                className="h-full w-full object-contain mix-blend-screen"
-              />
+              <img src={fitFigureUrls.spectral} alt="Waterfall spectral figure" className="h-full w-full object-contain" />
             ) : (
-              <div className="px-6 text-center text-xs font-medium text-slate-500">
-                Render the spectral figure from Step 4 to preview it here.
-              </div>
+              <div className="plate-empty">Render the spectral figure from Step 4 to preview it here.</div>
             )}
-          </div>
+          </figure>
         </div>
 
-        <div>
-          <h4 className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Spectral Heatmap</h4>
-          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-black/35 shadow-inner">
-            {fitFigureUrls.spectralHeatmap ? (
-              <img
-                src={fitFigureUrls.spectralHeatmap}
-                alt="Spectral heatmap figure"
-                className="h-full w-full object-contain mix-blend-screen"
-              />
-            ) : (
-              <div className="px-6 text-center text-xs font-medium text-slate-500">
-                Render the spectral figure from Step 4 to preview the heatmap here.
-              </div>
-            )}
-          </div>
-        </div>
+        <Plate
+          title="Spectral Heatmap"
+          caption="Render the spectral figure from Step 4 to preview the heatmap here."
+          src={fitFigureUrls.spectralHeatmap || undefined}
+          alt="Spectral heatmap figure"
+        />
 
         <div>
-          <h4 className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Fit Parameters</h4>
-          <div className="space-y-2.5 text-xs">
+          <h4 className="mb-2 font-display text-sm font-semibold text-ink">Fit Parameters</h4>
+          <div className="text-xs">
             {!extractedFilenames.length ? (
-              <div className="rounded-xl border border-white/5 bg-white/5 p-4 text-center font-medium text-slate-500 backdrop-blur-sm">
-                Run fitting to populate cards.
-              </div>
+              <div className="plate-empty border border-rule">Run fitting to populate cards.</div>
             ) : (
               extractedFilenames.map((filename) => {
                 const result = fitResults[filename];
@@ -149,46 +136,34 @@ export function RightPreviewPanel({
 
                 if (!result) {
                   return (
-                    <div
-                      key={filename}
-                      className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-md transition-colors hover:bg-white/10"
-                    >
-                      <div className="absolute left-0 top-0 bottom-0 w-1 opacity-80" style={{ backgroundColor: color }} />
-                      <div className="pl-1 font-semibold text-slate-200">{filename}</div>
-                      <div className="pl-1 mt-1 text-slate-500 font-medium">No fit executed yet.</div>
+                    <div key={filename} className="readout" style={{ '--swatch': color } as CSSProperties}>
+                      <div className="readout-name">{filename}</div>
+                      <div className="readout-meta mt-1">No fit executed yet.</div>
                     </div>
                   );
                 }
 
                 if (isFitError(result)) {
                   return (
-                    <div
-                      key={filename}
-                      className="group relative overflow-hidden rounded-xl border border-rose-500/30 bg-rose-500/5 p-3.5 backdrop-blur-md transition-colors hover:bg-rose-500/10"
-                    >
-                      <div className="absolute left-0 top-0 bottom-0 w-1 opacity-80 bg-rose-500" />
-                      <div className="pl-1 font-semibold text-rose-200">{filename}</div>
-                      <div className="pl-1 mt-1 font-medium text-rose-400">{result.error}</div>
+                    <div key={filename} className="readout readout--error">
+                      <div className="readout-name text-error">{filename}</div>
+                      <div className="readout-meta mt-1">{result.error}</div>
                     </div>
                   );
                 }
 
                 return (
-                  <div
-                    key={filename}
-                    className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-md transition-colors hover:bg-white/10"
-                  >
-                    <div className="absolute left-0 top-0 bottom-0 w-1 opacity-80 shadow-[0_0_10px_currentColor]" style={{ backgroundColor: color, color }} />
-                    <div className="pl-1 font-semibold text-slate-200">{filename}</div>
-                    <div className="pl-1 mt-1.5 flex flex-col gap-1 text-slate-400 font-medium opacity-80 group-hover:opacity-100 transition-opacity">
+                  <div key={filename} className="readout" style={{ '--swatch': color } as CSSProperties}>
+                    <div className="readout-name">{filename}</div>
+                    <div className="readout-meta mt-1.5 space-y-1">
                       <div>
                         Range: {formatNumber(result.fit_range[0], 4)} → {formatNumber(result.fit_range[1], 4)} | Points: {result.points_used}
                       </div>
-                      <div className="flex gap-2 text-[11px] text-slate-300">
-                        <span className="bg-black/20 px-1.5 py-0.5 rounded">Yb={formatNumber(result.params.Yb)}</span>
-                        <span className="bg-black/20 px-1.5 py-0.5 rounded">A={formatNumber(result.params.A)}</span>
-                        <span className="bg-black/20 px-1.5 py-0.5 rounded">TD={formatNumber(result.params.TD)}</span>
-                        <span className="bg-black/20 px-1.5 py-0.5 rounded">Tau={formatNumber(result.params.Tau)}</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="readout-param">Yb={formatNumber(result.params.Yb)}</span>
+                        <span className="readout-param">A={formatNumber(result.params.A)}</span>
+                        <span className="readout-param">TD={formatNumber(result.params.TD)}</span>
+                        <span className="readout-param">Tau={formatNumber(result.params.Tau)}</span>
                       </div>
                       <div>
                         R²={formatNumber(result.metrics.r2)} | RMSE={formatNumber(result.metrics.rmse, 6)}

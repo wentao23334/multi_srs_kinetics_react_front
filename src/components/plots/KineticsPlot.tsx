@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { NumericRange, IntegrationCacheEntry } from '../../types/workflow';
 import { usePlotly } from '../../hooks/usePlotly';
 import { getNearestValueFromAxis, getSnappedRange } from '../../lib/workflowUtils';
+import { getPlotTheme, plotAxisTheme } from '../../lib/plotTheme';
 
 type PlotlyAxis = {
   _offset?: unknown;
@@ -55,6 +56,8 @@ export function KineticsPlot({
   const resizeFrameRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
   const { plotly, errorMessage } = usePlotly();
+  const plotTheme = getPlotTheme();
+  const axisTheme = plotAxisTheme();
   const fitRangeKey = `${filename ?? ''}:${fitRange?.start ?? 'null'}|${fitRange?.end ?? 'null'}`;
   const [draftRange, setDraftRange] = useState<DraftRangeState | null>(null);
   const [axisMeta, setAxisMeta] = useState<AxisMeta | null>(null);
@@ -143,29 +146,23 @@ export function KineticsPlot({
             x: integrationData.time,
             y: integrationData.areas,
             mode: 'lines+markers',
-            marker: { size: 5, color: '#3dc19e' },
-            line: { color: '#3dc19e' },
+            marker: { size: 5, color: plotTheme.accent },
+            line: { color: plotTheme.accent },
             name: 'Integrated Area',
           },
         ],
         {
           title: {
-            text: `Area–Time [${integrationData.window[0].toFixed(0)}, ${integrationData.window[1].toFixed(0)}] cm⁻¹  —  ${filename}`,
-            font: { color: '#eeeeee', size: 12 },
+            text: `Integrated area, [${integrationData.window[0].toFixed(0)}, ${integrationData.window[1].toFixed(0)}] cm⁻¹, ${filename}`,
+            font: { color: plotTheme.ink2, size: 12, family: plotTheme.fontDisplay },
           },
           xaxis: {
             title: 'Time / Potential',
-            gridcolor: '#333',
-            zerolinecolor: '#444',
-            tickfont: { color: '#ccc' },
-            titlefont: { color: '#ccc' },
+            ...axisTheme,
           },
           yaxis: {
             title: 'Integrated Area',
-            gridcolor: '#333',
-            zerolinecolor: '#444',
-            tickfont: { color: '#ccc' },
-            titlefont: { color: '#ccc' },
+            ...axisTheme,
           },
           margin: { l: 60, r: 20, t: 52, b: 50 },
           plot_bgcolor: 'transparent',
@@ -178,7 +175,7 @@ export function KineticsPlot({
               y0: 0,
               y1: 1,
               yref: 'paper',
-              line: { color: 'rgba(0,0,0,0)', width: 0 },
+              line: { width: 0 },
               editable: false,
             },
             {
@@ -188,7 +185,7 @@ export function KineticsPlot({
               y0: 0,
               y1: 1,
               yref: 'paper',
-              line: { color: 'rgba(0,0,0,0)', width: 0 },
+              line: { width: 0 },
               editable: false,
             },
           ],
@@ -343,17 +340,15 @@ export function KineticsPlot({
 
   if (errorMessage) {
     return (
-      <div className="flex h-full items-center justify-center px-4 text-sm text-slate-400">
-        Failed to load kinetics plot: {errorMessage}
+      <div className="flex h-full items-center justify-center px-4">
+        <p className="status-line text-error">Failed to load kinetics plot: {errorMessage}</p>
       </div>
     );
   }
 
   if (!filename || !integrationData) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-slate-500">
-        Integrate a file to render the kinetics plot.
-      </div>
+      <p className="plate-empty h-full">Integrate a file to render the kinetics plot.</p>
     );
   }
 
@@ -372,7 +367,7 @@ export function KineticsPlot({
               style={{ left }}
               onPointerDown={startDrag(handle)}
             >
-                <div className="h-full w-0 border-l-2 border-dashed border-purple-400" />
+                <div aria-hidden="true" className="h-full w-0 border-l-2 border-dashed border-accent" />
               </div>
             );
           })}
@@ -396,7 +391,7 @@ export function KineticsPlot({
           aria-valuenow={selectedSpectrumTime}
           title={`Selected spectrum time: ${selectedSpectrumTime.toFixed(4)}`}
         >
-          <div className="h-full w-0 border-l-2 border-dashed border-red-500" />
+          <div aria-hidden="true" className="h-full w-0 border-l border-dashed border-rule-2" />
         </div>
       )}
     </div>

@@ -85,26 +85,16 @@ function ResizeHandle({
   onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
   return (
-    <div className="relative z-20 flex h-full w-4 shrink-0 items-center justify-center">
+    <div className="relative z-20 flex h-full w-1 shrink-0 items-stretch">
       <button
         type="button"
         aria-label={side === 'left' ? 'Resize left panel' : 'Resize right panel'}
+        aria-pressed={active}
         data-resize-handle={side}
         onPointerDown={onPointerDown}
-        className="group relative flex h-full w-4 cursor-col-resize touch-none items-center justify-center outline-none"
+        className="resize-grip"
       >
-        <span
-          className={`pointer-events-none absolute inset-y-4 left-1/2 w-px -translate-x-1/2 rounded-full transition-colors ${
-            active ? 'bg-blue-400/40' : 'bg-white/[0.05] group-hover:bg-white/[0.10]'
-          }`}
-        />
-        <span
-          className={`pointer-events-none relative h-16 w-1.5 rounded-full border transition-all ${
-            active
-              ? 'border-blue-400/40 bg-blue-400/30 shadow-[0_0_16px_rgba(96,165,250,0.25)]'
-              : 'border-white/[0.08] bg-white/[0.10] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
-          }`}
-        />
+        <span aria-hidden="true" className="resize-grip-bar" />
       </button>
     </div>
   );
@@ -1149,7 +1139,7 @@ export function AppShell() {
   return (
     <div
       ref={layoutRef}
-      className={`flex h-screen w-full overflow-hidden bg-transparent text-slate-200 ${
+      className={`flex h-screen w-full overflow-hidden bg-paper text-ink ${
         draggingSide ? 'select-none' : ''
       }`}
     >

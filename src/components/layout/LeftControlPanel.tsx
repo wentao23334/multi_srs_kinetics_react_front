@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, type ChangeEvent } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { COLOR_SCALE_NAMES, sampleColors } from '../../lib/workflowUtils';
 import type {
   FigurePanelSettings,
@@ -83,14 +84,14 @@ function SectionToggle({
   step,
   title,
   open,
-  badgeClassName,
+  current,
   withDivider = true,
   onClick,
 }: {
   step: number;
   title: string;
   open: boolean;
-  badgeClassName: string;
+  current: boolean;
   withDivider?: boolean;
   onClick: () => void;
 }) {
@@ -98,25 +99,46 @@ function SectionToggle({
     <button
       type="button"
       onClick={onClick}
-      className={`mb-5 flex w-full items-center justify-between gap-3 text-left ${
-        withDivider ? 'border-t border-white/[0.04] pt-8' : ''
-      }`}
+      aria-expanded={open}
+      aria-current={current ? 'step' : undefined}
+      className={`step-toggle ${withDivider ? 'border-t border-rule' : ''} mb-4`}
     >
-      <div className="flex items-center gap-3">
-        <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white shadow-lg ${badgeClassName}`}>
-          {step}
-        </span>
-        <h3 className="text-sm font-semibold tracking-wide text-white/90">{title}</h3>
-      </div>
-      <span
-        aria-hidden="true"
-        className={`rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-slate-400 transition-transform ${
-          open ? 'rotate-0' : '-rotate-90'
-        }`}
-      >
-        v
+      <span className="flex items-baseline gap-3">
+        <span className="step-idx">{step}</span>
+        <span className="step-name" role="heading" aria-level={3}>{title}</span>
       </span>
+      <ChevronDown aria-hidden="true" className={`step-chevron h-4 w-4 shrink-0`} />
     </button>
+  );
+}
+
+function SelectWrap({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  options: { value: string; label: string }[];
+  ariaLabel: string;
+}) {
+  return (
+    <span className="select-wrap">
+      <select
+        value={value}
+        onChange={onChange}
+        aria-label={ariaLabel}
+        className="select"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown aria-hidden="true" className="select-chevron h-4 w-4" />
+    </span>
   );
 }
 
@@ -186,31 +208,33 @@ export function LeftControlPanel({
   };
 
   return (
-    <aside className="relative flex h-full w-full min-w-0 flex-col overflow-hidden border-r border-white/[0.04] bg-black/40 backdrop-blur-xl">
-      <div className="relative z-10 border-b border-white/[0.04] bg-black/15 p-6 backdrop-blur-sm">
-        <h2 className="mb-1 text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400">
+    <aside className="flex h-full w-full min-w-0 flex-col border-r border-rule bg-paper-2">
+      <div className="border-b-2 border-rule-2 p-6 pb-5">
+        <h2 className="font-display text-xl font-semibold tracking-display text-ink">
           Multi SRS Studio
         </h2>
-        <p className="text-[11px] font-medium uppercase tracking-widest text-slate-400/80">React workflow console</p>
 
-        <label className="mt-5 flex cursor-pointer items-center gap-2.5 text-sm font-medium text-slate-300 group">
+        <label className="mt-5 flex cursor-pointer items-center gap-2.5 text-sm text-ink-2">
           <input
             type="checkbox"
             checked={keepRecord}
             onChange={(event) => onKeepRecordChange(event.target.checked)}
-            className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all group-hover:border-white/40"
+            className="checkbox"
           />
-          <span className="group-hover:text-white transition-colors">Keep Record Persistence</span>
+          <span>Keep Record Persistence</span>
         </label>
       </div>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-6 scroll-smooth">
-        <section className={`transition-opacity duration-300 ${currentStep !== 1 ? 'opacity-50' : 'opacity-100'}`}>
+      <div className="flex-1 space-y-6 overflow-y-auto p-6">
+        <section
+          className="step-section"
+          data-locked={currentStep !== 1 ? 'true' : 'false'}
+        >
           <SectionToggle
             step={1}
             title="Data & Settings"
             open={openSections.step1}
-            badgeClassName="from-blue-500 to-indigo-600 shadow-blue-500/30"
+            current={currentStep === 1}
             withDivider={false}
             onClick={() => toggleSection('step1')}
           />
@@ -220,106 +244,112 @@ export function LeftControlPanel({
               <input
                 value={folderInput}
                 onChange={(event) => onFolderInputChange(event.target.value)}
-                placeholder="Paste local folder path..."
-                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 transition-all focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                placeholder="Paste a local folder path"
+                aria-label="Folder path"
+                className="input"
               />
               <button
+                type="button"
                 onClick={onApplyFolder}
                 disabled={applyFolderPending}
-                className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-slate-300 transition-all hover:bg-white/10 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+                aria-busy={applyFolderPending}
+                className="btn w-full"
               >
                 {applyFolderPending ? 'Scanning...' : 'Apply Folder'}
               </button>
 
-              <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-slate-400">
+              <div className="max-h-48 overflow-y-auto border border-rule bg-sheet p-3">
                 {!foundSrsFiles.length ? (
-                  <p className="p-2 text-center text-slate-500">No folder applied yet.</p>
+                  <p className="plate-empty">No folder applied yet. Paste a path above and apply it to list its files.</p>
                 ) : (
                   <>
-                    <label className="mb-2 flex items-center gap-2.5 border-b border-white/5 pb-2.5 font-semibold text-slate-200">
+                    <label className="mb-2 flex items-center gap-2.5 border-b-2 border-rule-2 pb-2.5 text-sm font-medium text-ink">
                       <input
                         type="checkbox"
                         checked={allSelected}
                         onChange={(event) => onToggleSelectAll(event.target.checked)}
-                        className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
+                        className="checkbox"
                       />
-                      <span>Select All ({foundSrsFiles.length})</span>
+                      <span>Select all ({foundSrsFiles.length})</span>
                     </label>
                     {foundSrsFiles.map((file) => (
-                      <label key={file} className="mx-[-0.25rem] flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 transition-colors hover:bg-white/5">
+                      <label key={file} className="file-row cursor-pointer">
                         <input
                           type="checkbox"
                           checked={selectedFiles.includes(file)}
                           onChange={(event) => onToggleFile(file, event.target.checked)}
-                          className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
+                          className="checkbox shrink-0"
                         />
-                        <span className="truncate">{file}</span>
+                        <span className="file-name truncate">{file}</span>
                       </label>
                     ))}
                   </>
                 )}
               </div>
 
-              <label className="block text-xs font-medium text-slate-300">
-                <span className="mb-1.5 block">Mode</span>
-                <select
+              <label className="field">
+                <span className="field-label">Mode</span>
+                <SelectWrap
                   value={mode}
                   onChange={(event) => onModeChange(event.target.value as 'fast' | 'realtime')}
-                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30 appearance-none"
-                >
-                  <option value="realtime" className="bg-slate-900">realtime</option>
-                  <option value="fast" className="bg-slate-900">fast</option>
-                </select>
+                  ariaLabel="Mode"
+                  options={[
+                    { value: 'realtime', label: 'realtime' },
+                    { value: 'fast', label: 'fast' },
+                  ]}
+                />
               </label>
 
               <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs font-medium text-slate-300">
-                  <span className="mb-1.5 block">Default Start WN</span>
+                <label className="field">
+                  <span className="field-label">Default Start WN</span>
                   <input
                     type="number"
                     value={defaultStartWn}
                     onChange={(event) => onDefaultStartWnChange(Number(event.target.value))}
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                    className="input input--num"
                   />
                 </label>
-                <label className="block text-xs font-medium text-slate-300">
-                  <span className="mb-1.5 block">Default End WN</span>
+                <label className="field">
+                  <span className="field-label">Default End WN</span>
                   <input
                     type="number"
                     value={defaultEndWn}
                     onChange={(event) => onDefaultEndWnChange(Number(event.target.value))}
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                    className="input input--num"
                   />
                 </label>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs font-medium text-slate-300">
-                  <span className="mb-1.5 block">Crop Start WN</span>
+                <label className="field">
+                  <span className="field-label">Crop Start WN</span>
                   <input
                     type="number"
                     value={cropStartWnInput}
                     onChange={(event) => onCropStartWnInputChange(event.target.value)}
                     placeholder="optional"
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                    className="input input--num"
                   />
                 </label>
-                <label className="block text-xs font-medium text-slate-300">
-                  <span className="mb-1.5 block">Crop End WN</span>
+                <label className="field">
+                  <span className="field-label">Crop End WN</span>
                   <input
                     type="number"
                     value={cropEndWnInput}
                     onChange={(event) => onCropEndWnInputChange(event.target.value)}
                     placeholder="optional"
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 hover:bg-black/30"
+                    className="input input--num"
                   />
                 </label>
               </div>
 
               <button
+                type="button"
                 onClick={onExtractAll}
                 disabled={!selectedFiles.length || extractPending}
-                className="mt-2 w-full rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:to-indigo-500 hover:shadow-blue-500/40 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+                aria-busy={extractPending}
+                className="btn btn--primary mt-2 w-full"
               >
                 {extractPending ? 'Extracting...' : 'Extract Selected'}
               </button>
@@ -327,56 +357,61 @@ export function LeftControlPanel({
           )}
         </section>
 
-        <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
+        <section
+          className="step-section"
+          data-locked={currentStep < 2 ? 'true' : 'false'}
+        >
           <SectionToggle
             step={2}
             title="Integration"
             open={openSections.step2}
-            badgeClassName="from-amber-500 to-orange-600 shadow-amber-500/30"
+            current={currentStep === 2}
             onClick={() => toggleSection('step2', currentStep < 2)}
           />
 
           {openSections.step2 && (
-            <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 backdrop-blur-md">
-              <label className="block text-xs font-medium text-slate-300">
-                <span className="mb-1.5 block">Start WN</span>
-                <input
-                  type="number"
-                  value={integrationRange[0]}
-                  onChange={(event) =>
-                    onIntegrationRangeChange([Number(event.target.value), integrationRange[1]])
-                  }
-                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 hover:bg-black/30"
-                />
-              </label>
-              <label className="block text-xs font-medium text-slate-300">
-                <span className="mb-1.5 block">End WN</span>
-                <input
-                  type="number"
-                  value={integrationRange[1]}
-                  onChange={(event) =>
-                    onIntegrationRangeChange([integrationRange[0], Number(event.target.value)])
-                  }
-                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 hover:bg-black/30"
-                />
-              </label>
-              <label className="block text-xs font-medium text-slate-300">
-                <span className="mb-1.5 block">Baseline Mode</span>
-                <select
+            <div className="space-y-4 border-t-2 border-rule-2 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="field">
+                  <span className="field-label">Start WN</span>
+                  <input
+                    type="number"
+                    value={integrationRange[0]}
+                    onChange={(event) =>
+                      onIntegrationRangeChange([Number(event.target.value), integrationRange[1]])
+                    }
+                    className="input input--num"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">End WN</span>
+                  <input
+                    type="number"
+                    value={integrationRange[1]}
+                    onChange={(event) =>
+                      onIntegrationRangeChange([integrationRange[0], Number(event.target.value)])
+                    }
+                    className="input input--num"
+                  />
+                </label>
+              </div>
+              <label className="field">
+                <span className="field-label">Baseline mode</span>
+                <SelectWrap
                   value={baselineMode}
-                  onChange={(event) =>
-                    onBaselineModeChange(event.target.value as 'none' | 'linear')
-                  }
-                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 hover:bg-black/30 appearance-none"
-                >
-                  <option value="none" className="bg-slate-900">None</option>
-                  <option value="linear" className="bg-slate-900">Linear</option>
-                </select>
+                  onChange={(event) => onBaselineModeChange(event.target.value as 'none' | 'linear') }
+                  ariaLabel="Baseline mode"
+                  options={[
+                    { value: 'none', label: 'None' },
+                    { value: 'linear', label: 'Linear' },
+                  ]}
+                />
               </label>
               <button
+                type="button"
                 onClick={onIntegrate}
                 disabled={!extractedFilenames.length}
-                className="mt-2 w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/25 transition-all hover:to-orange-400 hover:shadow-amber-500/40 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+                className="btn mt-2 w-full"
               >
                 Integrate Areas
               </button>
@@ -384,37 +419,35 @@ export function LeftControlPanel({
           )}
         </section>
 
-        <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
+        <section
+          className="step-section"
+          data-locked={currentStep < 2 ? 'true' : 'false'}
+        >
           <SectionToggle
             step={3}
             title="Kinetics Fitting"
             open={openSections.step3}
-            badgeClassName="from-purple-500 to-fuchsia-600 shadow-purple-500/30"
+            current={currentStep === 3}
             onClick={() => toggleSection('step3', currentStep < 2)}
           />
 
           {openSections.step3 && (
-            <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3 shadow-inner">
-                <label className="block text-xs font-medium text-slate-300">
-                  <span className="mb-1.5 block">Color Scheme</span>
-                  <select
+            <div className="space-y-4 border-t-2 border-rule-2 pt-4">
+              <div className="border border-rule p-3">
+                <label className="field">
+                  <span className="field-label">Color Scheme</span>
+                  <SelectWrap
                     value={figureSettings.colorScheme}
                     onChange={(event) => onFigureColorSchemeChange(event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 hover:bg-black/30 appearance-none"
-                  >
-                    {COLOR_SCALE_NAMES.map((scale) => (
-                      <option key={scale} value={scale} className="bg-slate-900">
-                        {scale}
-                      </option>
-                    ))}
-                  </select>
+                    ariaLabel="Color scheme"
+                    options={COLOR_SCALE_NAMES.map((scale) => ({ value: scale, label: scale }))}
+                  />
                 </label>
-                <div className="mt-3 flex gap-1">
+                <div className="mt-3 flex gap-1" aria-hidden="true">
                   {previewColors.map((color, index) => (
                     <span
                       key={`${color}-${index}`}
-                      className="h-3 flex-1 rounded-full border border-white/10"
+                      className="h-3 flex-1"
                       style={{ background: color }}
                     />
                   ))}
@@ -446,26 +479,22 @@ export function LeftControlPanel({
                   return (
                     <details
                       key={filename}
-                      className="overflow-hidden rounded-xl border border-white/5 bg-white/5 backdrop-blur-md transition-all open:border-white/10 open:bg-white/10"
+                      className="border-t border-rule first:border-t-0"
                       onToggle={(event) => {
                         if ((event.currentTarget as HTMLDetailsElement).open) {
                           onSelectKineticsFile(filename);
                         }
                       }}
                     >
-                      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-white/5">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="truncate">{filename}</span>
-                          {activeKineticsFile === filename && (
-                            <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.4)]">
-                              Active
-                            </span>
-                          )}
-                        </div>
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 pr-1 text-sm text-ink-2 transition-colors hover:text-ink">
+                        <span className="file-name truncate font-medium">{filename}</span>
+                        {activeKineticsFile === filename && (
+                          <span className="shrink-0 font-outlier text-xs text-accent">active</span>
+                        )}
                       </summary>
-                      <div className="grid grid-cols-2 gap-3 border-t border-white/5 bg-black/20 px-4 py-4">
-                        <label className="block text-xs font-medium text-slate-300">
-                          <span className="mb-1.5 block">Fit Start Time</span>
+                      <div className="grid grid-cols-2 gap-3 border-t border-rule bg-paper pb-4 pt-4">
+                        <label className="field">
+                          <span className="field-label">Fit Start Time</span>
                           <input
                             type="number"
                             step="any"
@@ -475,11 +504,11 @@ export function LeftControlPanel({
                             onChange={(event) =>
                               onFitRangeInputChange(filename, 'start', event.target.value)
                             }
-                            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-200 transition-all focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 hover:bg-black/50"
+                            className="input input--num"
                           />
                         </label>
-                        <label className="block text-xs font-medium text-slate-300">
-                          <span className="mb-1.5 block">Fit End Time</span>
+                        <label className="field">
+                          <span className="field-label">Fit End Time</span>
                           <input
                             type="number"
                             step="any"
@@ -489,7 +518,7 @@ export function LeftControlPanel({
                             onChange={(event) =>
                               onFitRangeInputChange(filename, 'end', event.target.value)
                             }
-                            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-200 transition-all focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 hover:bg-black/50"
+                            className="input input--num"
                           />
                         </label>
                       </div>
@@ -501,20 +530,24 @@ export function LeftControlPanel({
           )}
         </section>
 
-        <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
+        <section
+          className="step-section"
+          data-locked={currentStep < 2 ? 'true' : 'false'}
+        >
           <SectionToggle
             step={4}
             title="Spectral Figure"
             open={openSections.step4}
-            badgeClassName="from-emerald-500 to-teal-600 shadow-emerald-500/30"
+            current={currentStep === 4}
             onClick={() => toggleSection('step4', currentStep < 2)}
           />
 
           {openSections.step4 && (
-            <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-              <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-[11px] font-medium text-slate-400">
-                Uses the current waterfall file, gap, max lines, visible time range, and color scheme from the central interactive plot.
-              </div>
+            <div className="space-y-4 border-t-2 border-rule-2 pt-4">
+              <p className="border-t border-rule-2 pt-3 text-xs leading-relaxed text-muted">
+                Uses the current waterfall file, gap, max lines, visible time range, and color
+                scheme from the central plot.
+              </p>
 
               <SpectralFigureCard
                 settings={figureSettings.spectral}
@@ -525,24 +558,29 @@ export function LeftControlPanel({
 
               <div className="space-y-2">
                 <button
+                  type="button"
                   onClick={onRenderSpectralFigure}
                   disabled={spectralFigurePending || !extractedFilenames.length}
-                  className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all hover:to-teal-500 hover:shadow-emerald-500/40 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+                  aria-busy={spectralFigurePending}
+                  className="btn w-full"
                 >
                   {spectralFigurePending ? 'Rendering...' : 'Render Spectral Figure'}
                 </button>
-                <p className="text-[11px] font-medium text-slate-500">{spectralFigureStatus}</p>
+                <p className="status-line">{spectralFigureStatus}</p>
               </div>
             </div>
           )}
         </section>
 
-        <section className={`transition-opacity duration-300 ${currentStep < 2 ? 'opacity-40' : 'opacity-100'}`}>
+        <section
+          className="step-section"
+          data-locked={currentStep < 2 ? 'true' : 'false'}
+        >
           <SectionToggle
             step={5}
             title="Image Parameters"
             open={openSections.step5}
-            badgeClassName="from-sky-500 to-cyan-600 shadow-sky-500/30"
+            current={currentStep === 5}
             onClick={() => toggleSection('step5', currentStep < 2)}
           />
 

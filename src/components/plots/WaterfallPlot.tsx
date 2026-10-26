@@ -6,6 +6,7 @@ import {
   buildWaterfallTracePayload,
   formatRangeInput,
 } from '../../lib/workflowUtils';
+import { getPlotTheme, plotAxisTheme } from '../../lib/plotTheme';
 
 type PlotlyAxis = {
   _offset?: unknown;
@@ -61,6 +62,8 @@ export function WaterfallPlot({
   const rangeRef = useRef<[number, number]>(integrationRange);
   const draggingRef = useRef(false);
   const { plotly, errorMessage } = usePlotly();
+  const plotTheme = getPlotTheme();
+  const axisTheme = plotAxisTheme();
   const integrationRangeKey = `${dataset?.filename ?? ''}:${integrationRange[0]}|${integrationRange[1]}`;
   const [draftRange, setDraftRange] = useState<DraftRangeState | null>(null);
   const [axisMeta, setAxisMeta] = useState<AxisMeta | null>(null);
@@ -137,22 +140,16 @@ export function WaterfallPlot({
         })),
         {
           title: {
-            text: `SRS Waterfall — ${dataset.filename} (Gap=${gap.toPrecision(4)}, Time=${formatRangeInput(visibleRange.start, visibleRange.end)})`,
-            font: { color: '#eeeeee' },
+            text: `SRS waterfall, ${dataset.filename}, gap ${gap.toPrecision(4)}, time ${formatRangeInput(visibleRange.start, visibleRange.end)}`,
+            font: { color: plotTheme.ink2, size: 12, family: plotTheme.fontDisplay },
           },
           xaxis: {
             title: 'Wavenumber (cm⁻¹)',
-            gridcolor: '#333',
-            zerolinecolor: '#444',
-            tickfont: { color: '#ccc' },
-            titlefont: { color: '#ccc' },
+            ...axisTheme,
           },
           yaxis: {
             title: 'Intensity + Offset',
-            gridcolor: '#333',
-            zerolinecolor: '#444',
-            tickfont: { color: '#ccc' },
-            titlefont: { color: '#ccc' },
+            ...axisTheme,
           },
           margin: { l: 60, r: 20, t: 52, b: 50 },
           plot_bgcolor: 'transparent',
@@ -167,7 +164,7 @@ export function WaterfallPlot({
               y0: 0,
               y1: 1,
               yref: 'paper',
-              line: { color: 'rgba(0,0,0,0)', width: 0 },
+              line: { width: 0 },
               editable: false,
             },
             {
@@ -177,7 +174,7 @@ export function WaterfallPlot({
               y0: 0,
               y1: 1,
               yref: 'paper',
-              line: { color: 'rgba(0,0,0,0)', width: 0 },
+              line: { width: 0 },
               editable: false,
             },
           ],
@@ -275,17 +272,17 @@ export function WaterfallPlot({
 
   if (errorMessage) {
     return (
-      <div className="flex h-full items-center justify-center px-4 text-sm text-slate-400">
-        Failed to load waterfall plot: {errorMessage}
+      <div className="flex h-full items-center justify-center px-4">
+        <p className="status-line text-error">Failed to load waterfall plot: {errorMessage}</p>
       </div>
     );
   }
 
   if (!dataset) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+      <p className="plate-empty h-full">
         Extract files and select one to render the waterfall.
-      </div>
+      </p>
     );
   }
 
@@ -303,7 +300,7 @@ export function WaterfallPlot({
               style={{ left }}
               onPointerDown={startDrag(handle)}
             >
-              <div className="mx-auto h-full border-l-2 border-dashed border-orange-400" />
+              <div aria-hidden="true" className="mx-auto h-full border-l-2 border-dashed border-rule-2" />
             </div>
           );
         })}

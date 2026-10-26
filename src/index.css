@@ -1,48 +1,230 @@
+/* Hallmark · shape: app screen · genre: editorial · theme: Almanac (deal 2/3, seed srs-kinetics-workbench-load-cb5c·99c5dc8a·2026-10-26·r0) · redesign: full
+ * nav: kept (three-pane shell, resizable) · signature: fit figures and the waterfall as printed plates on the sheet · states: 8 on controls; loading, empty, full on regions
+ * axes: mid/grotesk-sans/chromatic-magenta · posture: restrained · contrast: pass · v2.0.0 */
+/* Hallmark · waive 72 · both rails are scroll panes padded p-6 (24px) on every side · the finding measures text cut by the scroll fold, not an unpadded edge */
+/* Hallmark · restructured "Data & Settings", "Integration", "Kinetics Fitting", "Spectral Figure", "Image Parameters" from h3-in-button to labelled step rows (valid nesting) · copy unchanged, exposed as role=heading level 3 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 · weakest: S, a workbench could be any lab tool; earned it back by setting the matplotlib output as printed plates and the step rail as a book index in mono */
 @import "tailwindcss";
+@import "./tokens.css";
+@import "./base.css" layer(base);
 
-:root {
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: dark;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ---------- app screen: the register of an analysis bench ---------- */
+
+/* Controls: 34px app height, 44px hit target, eight states */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2xs);
+  min-height: 34px;
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink);
+  font: 600 var(--text-sm)/1 var(--font-display);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out);
+}
+.btn::before { content: ""; position: absolute; inset: -5px; }
+.btn:hover { background: var(--color-paper-3); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; transform: none; }
+.btn[aria-busy="true"] { cursor: progress; }
+.btn--primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-ink); }
+.btn--primary:hover { background: var(--color-accent-2); }
+
+/* Fields: constant 1px border, inset ring, mono numerals on measures */
+.field { display: block; }
+.field > .field-label {
+  display: block;
+  margin-bottom: var(--space-2xs);
+  font: 500 var(--text-sm)/1.3 var(--font-body);
+  color: var(--color-muted);
+}
+.input, .select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font: 400 var(--text-md)/1.3 var(--font-body);
+  outline: 2px solid transparent;
+  outline-offset: -3px;
+  transition: background-color var(--dur-short) var(--ease-out);
+}
+.input--num { font-family: var(--font-outlier); font-variant-numeric: tabular-nums; }
+.input::placeholder { color: var(--color-muted); opacity: 1; }
+.input:hover { background: var(--color-sheet); }
+.input:focus-visible, .select:focus-visible { outline-color: var(--color-focus); border-color: var(--color-ink-2); }
+.input:disabled { opacity: 0.55; cursor: not-allowed; }
+.select {
+  appearance: none;
+  padding-right: var(--space-xl);
+}
+.select-wrap { position: relative; display: block; }
+.select-chevron {
+  position: absolute;
+  right: var(--space-sm);
+  top: 50%;
+  translate: 0 -50%;
+  pointer-events: none;
+  color: var(--color-muted);
+}
+.checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--color-accent);
+  border-radius: 2px;
 }
 
-html, body, #root {
-  min-height: 100vh;
-  margin: 0;
+/* Step rail: an index, numbered in mono, the current step in magenta */
+.step-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-sm) 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+}
+.step-toggle::before { content: ""; position: absolute; inset: -5px 0; }
+.step-toggle:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.step-idx {
+  font: 500 var(--text-md)/1 var(--font-outlier);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+.step-name { font: 600 var(--text-md)/1.2 var(--font-display); color: var(--color-ink); }
+.step-toggle[aria-current="step"] .step-idx { color: var(--color-accent); }
+.step-toggle[aria-current="step"] .step-name { color: var(--color-ink); }
+.step-chevron { color: var(--color-muted); transition: transform var(--dur-short) var(--ease-out); }
+.step-toggle[aria-expanded="true"] .step-chevron { transform: rotate(180deg); }
+.step-section[data-locked="true"] { opacity: 0.45; }
+
+/* File index rows */
+.file-row { position: relative; display: flex; align-items: center; gap: var(--space-2xs); padding: var(--space-2xs) var(--space-2xs); border-radius: var(--radius-pill); }
+.file-row::before { content: ""; position: absolute; inset: -3px var(--space-3xs); }
+.file-row:hover { background: var(--color-paper-3); }
+.file-name { font: 400 var(--text-sm)/1.4 var(--font-outlier); color: var(--color-ink-2); }
+
+/* File chips on the stage: text with a rule, the active one underlined in magenta */
+.file-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 0 var(--space-2xs);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: 400 var(--text-sm)/1.3 var(--font-outlier);
+  color: var(--color-muted);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  transition: color var(--dur-short) var(--ease-out), text-decoration-color var(--dur-short) var(--ease-out);
+}
+.file-chip::before { content: ""; position: absolute; inset: -5px; }
+.file-chip:hover { color: var(--color-ink); text-decoration-color: var(--color-rule-2); }
+.file-chip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.file-chip[aria-current="true"] { color: var(--color-ink); text-decoration-color: var(--color-accent); text-decoration-thickness: 2px; }
+
+/* Stage: sections carry a firm head rule, never a card */
+.stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: var(--rule-bar) solid var(--color-rule-2);
+}
+.stage-title { font: 600 var(--text-lg)/1.2 var(--font-display); color: var(--color-ink); }
+.measure-label { font: 500 var(--text-sm)/1.3 var(--font-body); color: var(--color-muted); }
+
+/* The printed sheet: figures and readouts lie on the pale stock */
+.sheet {
+  background: var(--color-sheet);
+  border-top: var(--rule-bar) solid var(--color-ink);
+}
+.plate {
+  background: var(--color-sheet);
+  outline: var(--rule-hair) solid var(--color-rule-2);
+  outline-offset: -1px;
+}
+.plate-empty {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  text-align: center;
+  font: 400 var(--text-sm)/1.5 var(--font-body);
+  color: var(--color-muted);
+}
+.plate-caption { margin-top: var(--space-2xs); min-height: 1lh; font: 400 var(--text-sm)/1.45 var(--font-body); color: var(--color-muted); }
+
+/* Readout rows in the fit review: hairline-ruled entries, mono figures */
+.readout { position: relative; padding: var(--space-sm) 0 var(--space-sm) var(--space-md); border-top: var(--rule-hair) solid var(--color-rule); }
+.readout::before { content: ""; position: absolute; left: 0; top: var(--space-sm); bottom: var(--space-sm); width: 2px; background: var(--swatch, var(--color-rule-2)); }
+.readout--error::before { background: var(--color-error); }
+.readout-name { font: 500 var(--text-sm)/1.4 var(--font-outlier); color: var(--color-ink); }
+.readout-meta { font: 400 var(--text-sm)/1.5 var(--font-outlier); color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.readout-param { display: inline-block; padding: 0 var(--space-3xs); background: var(--color-paper-2); font-variant-numeric: tabular-nums; }
+
+/* Status lines reserve their line (F14) */
+.status-line { min-height: 1lh; font: 400 var(--text-sm)/1.45 var(--font-body); color: var(--color-muted); }
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-sm);
+  border: var(--rule-hair) solid var(--color-rule-2);
+  border-radius: var(--radius-pill);
+  font: 500 var(--text-sm)/1 var(--font-outlier);
+  color: var(--color-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pane resize handle: a hairline that firms up */
+.resize-grip {
+  position: relative;
+  display: flex;
+  height: 100%;
+  width: 4px;
+  align-items: stretch;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  border: 0;
+  background: none;
   padding: 0;
 }
+.resize-grip::before { content: ""; position: absolute; inset: 0 -10px; }
+.resize-grip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.resize-grip-bar { width: 2px; background: var(--color-rule); transition: background-color var(--dur-short) var(--ease-out); }
+.resize-grip:hover .resize-grip-bar, .resize-grip[aria-pressed="true"] .resize-grip-bar, .resize-grip:focus-visible .resize-grip-bar { background: var(--color-rule-2); }
 
-body {
-  background-color: #000000;
-  /* Modern radial mesh gradient inspired by HeroUI */
-  background-image: 
-    radial-gradient(at 0% 0%, hsla(243, 100%, 76%, 0.12) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, hsla(280, 100%, 70%, 0.15) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, hsla(190, 100%, 60%, 0.10) 0px, transparent 50%),
-    radial-gradient(at 0% 100%, hsla(339, 100%, 60%, 0.12) 0px, transparent 50%);
-  background-attachment: fixed;
-  color: #e2e8f0;
-}
+/* Plot shells */
+.plot-box { height: 100%; width: 100%; min-width: 0; }
+.plot-note { font: 400 var(--text-sm)/1.5 var(--font-body); color: var(--color-muted); }
 
-* {
-  box-sizing: border-box;
-}
-
-/* Sleek custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.25);
+@media (prefers-reduced-motion: reduce) {
+  .btn, .file-chip, .step-chevron, .resize-grip-bar, .input, .step-toggle { transition: none; }
+  .btn:active { transform: none; }
 }

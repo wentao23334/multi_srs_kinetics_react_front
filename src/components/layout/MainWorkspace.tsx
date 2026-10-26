@@ -39,7 +39,13 @@ interface MainWorkspaceProps {
   onIntegrationRangeChange: (range: [number, number], shouldDebounce: boolean) => void;
 }
 
-function FilePills({
+const STAGE_STEPS = [
+  { reached: 1, label: 'Extract' },
+  { reached: 2, label: 'Integrate' },
+  { reached: 3, label: 'Global Fit' },
+];
+
+function FileChips({
   filenames,
   activeFile,
   onSelect,
@@ -51,23 +57,19 @@ function FilePills({
   if (!filenames.length) return null;
 
   return (
-    <div className="mb-4 flex flex-wrap gap-2.5">
+    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Files">
       {filenames.map((filename) => {
         const active = activeFile === filename;
         return (
           <button
             key={filename}
+            type="button"
+            aria-pressed={active}
+            aria-current={active || undefined}
             onClick={() => onSelect(filename)}
-            className={`relative overflow-hidden rounded-full border px-4 py-1.5 text-xs font-medium transition-all duration-300 hover:scale-[1.02] active:scale-95 ${
-              active
-                ? 'border-blue-400/50 bg-blue-500/20 text-blue-100 shadow-[0_0_15px_rgba(59,130,246,0.3)]'
-                : 'border-white/10 bg-black/20 text-slate-400 hover:bg-white/10 hover:text-slate-200 hover:border-white/20'
-            }`}
+            className="file-chip"
           >
-            {active && (
-              <span className="absolute inset-0 block rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10" />
-            )}
-            <span className="relative z-10">{filename.length > 30 ? `…${filename.slice(-27)}` : filename}</span>
+            {filename.length > 30 ? '\u2026' + filename.slice(-27) : filename}
           </button>
         );
       })}
@@ -125,52 +127,61 @@ export function MainWorkspace({
   };
 
   return (
-    <main className="relative flex h-full flex-1 flex-col overflow-hidden bg-transparent">
-      <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-white/[0.04] bg-black/15 px-8 backdrop-blur-md">
-        <div className="flex items-center gap-3 text-xs font-semibold tracking-wide">
-          <span className={`rounded-full px-3 py-1.5 transition-all duration-500 ${currentStep >= 1 ? 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-300 border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]' : 'bg-white/5 text-slate-500 border border-transparent'}`}>
-            1. Extract
-          </span>
-          <span className="text-slate-600/50">―</span>
-          <span className={`rounded-full px-3 py-1.5 transition-all duration-500 ${currentStep >= 2 ? 'bg-gradient-to-r from-amber-500/20 to-orange-600/20 text-amber-300 border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 'bg-white/5 text-slate-500 border border-transparent'}`}>
-            2. Integrate
-          </span>
-          <span className="text-slate-600/50">―</span>
-          <span className={`rounded-full px-3 py-1.5 transition-all duration-500 ${currentStep >= 3 ? 'bg-gradient-to-r from-purple-500/20 to-fuchsia-600/20 text-purple-300 border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'bg-white/5 text-slate-500 border border-transparent'}`}>
-            3. Global Fit
-          </span>
+    <main className="relative flex h-full min-w-0 flex-1 flex-col">
+      <header className="flex h-16 shrink-0 items-center justify-between gap-6 border-b border-rule px-8">
+        <div className="flex items-center text-sm">
+          {STAGE_STEPS.map((step, index) => {
+            const reached = currentStep >= step.reached;
+            const current = currentStep === step.reached;
+            return (
+              <span key={step.label} className={`flex items-center ${index > 0 ? 'border-l border-rule pl-4 ml-4' : ''}`}>
+                <span
+                  className={`inline-flex items-baseline gap-1.5 border-b-2 pb-1 ${
+                    current
+                      ? 'border-accent text-ink'
+                      : reached
+                        ? 'border-rule-2 text-ink-2'
+                        : 'border-transparent text-muted'
+                  }`}
+                >
+                  <span className="font-outlier text-xs tabular-nums">{step.reached}.</span>
+                  {step.label}
+                </span>
+              </span>
+            );
+          })}
         </div>
-        <p className="max-w-[30rem] truncate text-xs font-medium text-slate-400 bg-white/5 px-4 py-1.5 rounded-full border border-white/5">{vizStatusMsg}</p>
+        <p className="status-line max-w-[30rem] truncate text-right" role="status">{vizStatusMsg}</p>
       </header>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-8 scroll-smooth">
-        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-6 backdrop-blur-xl transition-all hover:bg-white/[0.05] hover:border-white/[0.10]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-            <h3 className="text-base font-bold text-white/90">SRS Waterfall</h3>
-            <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-300">
-              <label className="flex items-center gap-2">
-                <span>Gap</span>
+      <div className="flex-1 space-y-10 overflow-y-auto p-8">
+        <section>
+          <div className="stage-head">
+            <h3 className="stage-title">SRS Waterfall</h3>
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="field">
+                <span className="field-label">Gap</span>
                 <input
                   type="number"
                   value={waterfallGap}
                   step="any"
                   onChange={(event) => onWaterfallGapChange(Number(event.target.value))}
-                  className="w-20 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
+                  className="input input--num w-20"
                 />
               </label>
-              <label className="flex items-center gap-2">
-                <span>Max Lines</span>
+              <label className="field">
+                <span className="field-label">Max Lines</span>
                 <input
                   type="number"
                   value={waterfallMaxLines}
                   min={1}
                   max={200}
                   onChange={(event) => onWaterfallMaxLinesChange(Number(event.target.value))}
-                  className="w-16 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
+                  className="input input--num w-16"
                 />
               </label>
-              <label className="flex items-center gap-2">
-                <span>Time Range</span>
+              <label className="field">
+                <span className="field-label">Time Range</span>
                 <input
                   value={waterfallTimeRangeInput}
                   onChange={(event) => onWaterfallTimeRangeInputChange(event.target.value)}
@@ -182,33 +193,37 @@ export function MainWorkspace({
                     }
                   }}
                   placeholder="1,5"
-                  className="w-28 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40"
+                  className="input input--num w-28"
                 />
               </label>
-              <label className="flex items-center gap-2">
-                <span>Color</span>
-                <select
-                  value={waterfallColorScheme}
-                  onChange={(event) => onWaterfallColorSchemeChange(event.target.value)}
-                  className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-slate-200 transition-colors focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/40 appearance-none pointer-events-auto"
-                >
-                  {COLOR_SCALE_NAMES.map((scale) => (
-                    <option key={scale} value={scale} className="bg-slate-900">
-                      {scale}
-                    </option>
-                  ))}
-                </select>
+              <label className="field">
+                <span className="field-label">Color</span>
+                <span className="select-wrap">
+                  <select
+                    value={waterfallColorScheme}
+                    onChange={(event) => onWaterfallColorSchemeChange(event.target.value)}
+                    aria-label="Waterfall color scheme"
+                    className="select w-32"
+                  >
+                    {COLOR_SCALE_NAMES.map((scale) => (
+                      <option key={scale} value={scale}>
+                        {scale}
+                      </option>
+                    ))}
+                  </select>
+                  <svg aria-hidden="true" viewBox="0 0 16 16" className="select-chevron h-4 w-4"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+                </span>
               </label>
             </div>
           </div>
 
-          <FilePills
+          <FileChips
             filenames={extractedFilenames}
             activeFile={activeWaterfallFile}
             onSelect={onSelectWaterfallFile}
           />
 
-          <div className="h-[400px]">
+          <div className="sheet h-[420px] p-2">
             <WaterfallPlot
               dataset={currentDataset}
               integrationRange={integrationRange}
@@ -224,18 +239,18 @@ export function MainWorkspace({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-6 backdrop-blur-xl transition-all hover:bg-white/[0.05] hover:border-white/[0.10]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-base font-bold text-white/90">Area-Time Kinetics</h3>
+        <section>
+          <div className="stage-head">
+            <h3 className="stage-title">Area-Time Kinetics</h3>
           </div>
 
-          <FilePills
+          <FileChips
             filenames={extractedFilenames}
             activeFile={activeKineticsFile}
             onSelect={onSelectKineticsFile}
           />
 
-          <div className="h-[360px]">
+          <div className="sheet h-[380px] p-2">
             <KineticsPlot
               filename={activeKineticsFile}
               integrationData={currentIntegrationData}
@@ -247,16 +262,14 @@ export function MainWorkspace({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-6 backdrop-blur-xl transition-all hover:bg-white/[0.05] hover:border-white/[0.10]">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <h3 className="text-base font-bold text-white/90">Single Spectrum</h3>
+        <section>
+          <div className="stage-head">
+            <h3 className="stage-title">Single Spectrum</h3>
             <div className="flex flex-col items-end gap-2">
               {selectedSpectrumTime !== null && (
-                <span className="rounded-full border border-red-400/30 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-300">
-                  t = {selectedSpectrumTime.toFixed(4)}
-                </span>
+                <span className="status-chip">t = {selectedSpectrumTime.toFixed(4)}</span>
               )}
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-300">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
                 <input
                   type="checkbox"
                   checked={subtractBackgroundPending}
@@ -277,14 +290,14 @@ export function MainWorkspace({
                       );
                     }
                   }}
-                  className="h-3.5 w-3.5 rounded border-white/20 bg-black/30 accent-red-500"
+                  className="checkbox"
                 />
                 <span>{subtractBackgroundPending ? 'Subtracting…' : 'Subtract Background'}</span>
               </label>
             </div>
           </div>
 
-          <div className="h-[360px]">
+          <div className="sheet h-[380px] p-2">
             <SingleSpectrumPlot
               dataset={currentKineticsDataset}
               selectedTime={selectedSpectrumTime}

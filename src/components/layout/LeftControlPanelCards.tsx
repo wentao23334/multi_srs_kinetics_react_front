@@ -43,17 +43,17 @@ export function ManualFitColorPicker({
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold text-slate-300 transition-all hover:bg-black/30 focus:border-purple-500/50 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+        className="btn w-full justify-between"
       >
         <span>Manual Colors</span>
         <ChevronDown
           aria-hidden="true"
-          className={`h-4 w-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`step-chevron h-4 w-4 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
-        <div className="mt-3 grid grid-cols-8 gap-1.5 rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="mt-3 grid grid-cols-8 gap-1.5 border border-rule bg-sheet p-2">
           {colors.map((color, index) => {
             const key = colorKey(color);
             const selectedFilename = selectedByColor.get(key) ?? null;
@@ -77,8 +77,8 @@ export function ManualFitColorPicker({
                   if (!filename || occupiedByOther) return;
                   onChange(filename, color);
                 }}
-                className={`relative aspect-square rounded-md border border-white/10 transition-transform ${
-                  occupiedByOther ? 'cursor-not-allowed opacity-60' : 'hover:scale-105'
+                className={`relative aspect-square outline outline-1 -outline-offset-1 outline-rule-2 ${
+                  occupiedByOther ? 'cursor-not-allowed opacity-60' : ''
                 }`}
                 style={{ background: color }}
               >
@@ -91,7 +91,7 @@ export function ManualFitColorPicker({
                       event.dataTransfer.setData('text/plain', selectedFilename);
                     }}
                     onDragEnd={() => setDraggedFilename(null)}
-                    className="absolute -inset-1 z-10 cursor-grab rounded-lg border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.85),0_0_12px_rgba(255,255,255,0.35)] active:cursor-grabbing"
+                    className="absolute -inset-1 z-10 cursor-grab border-2 border-ink active:cursor-grabbing"
                   />
                 )}
               </button>
@@ -115,62 +115,62 @@ export function GlobalImageSettingsCard({
   exportSvgPending: boolean;
 }) {
   return (
-    <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-      <div className="rounded-xl border border-sky-500/15 bg-sky-500/5 px-3 py-2 text-[11px] font-medium text-slate-400">
+    <div className="space-y-4 border-t-2 border-rule-2 pt-4">
+      <p className="text-xs leading-relaxed text-muted">
         Applies to overlay, normalized, spectral waterfall, and spectral heatmap exports.
-      </div>
+      </p>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">DPI</span>
+        <label className="field">
+          <span className="field-label">DPI</span>
           <input
             type="number"
             min={1}
             step={1}
             value={settings.dpi}
             onChange={(event) => onChange('dpi', Number(event.target.value))}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+            className="input input--num"
           />
         </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Width (cm)</span>
+        <label className="field">
+          <span className="field-label">Width (cm)</span>
           <input
             type="number"
             min={0.1}
             step={0.1}
             value={settings.widthCm}
             onChange={(event) => onChange('widthCm', Number(event.target.value))}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+            className="input input--num"
           />
         </label>
       </div>
-      <label className="block text-xs font-medium text-slate-300">
-        <span className="mb-1.5 block">Height (cm)</span>
+      <label className="field">
+        <span className="field-label">Height (cm)</span>
         <input
           type="number"
           min={0.1}
           step={0.1}
           value={settings.heightCm}
           onChange={(event) => onChange('heightCm', Number(event.target.value))}
-          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+          className="input input--num"
         />
       </label>
-      <label className="block text-xs font-medium text-slate-300">
-        <span className="mb-1.5 block">Font Size</span>
+      <label className="field">
+        <span className="field-label">Font Size</span>
         <input
           type="number"
           min={1}
           step={1}
           value={settings.fontSize}
           onChange={(event) => onChange('fontSize', Number(event.target.value))}
-          className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-all focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 hover:bg-black/30"
+          className="input input--num"
         />
       </label>
-      <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
         <input
           type="checkbox"
           checked={settings.reverseWavenumberAxis}
           onChange={(event) => onChange('reverseWavenumberAxis', event.target.checked)}
-          className="h-4 w-4 rounded border-white/20 bg-black/30 text-sky-500 focus:ring-sky-500/50 focus:ring-offset-0 transition-all"
+          className="checkbox"
         />
         <span>Reverse Wavenumber Axis</span>
       </label>
@@ -178,7 +178,8 @@ export function GlobalImageSettingsCard({
         type="button"
         onClick={onExportSvgFigures}
         disabled={exportSvgPending}
-        className="w-full rounded-xl bg-gradient-to-r from-sky-500 to-cyan-600 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition-all hover:to-cyan-500 hover:shadow-sky-500/40 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+        aria-busy={exportSvgPending}
+        className="btn w-full"
       >
         {exportSvgPending ? 'Exporting SVG...' : 'Export SVG to Source Folder'}
       </button>
@@ -202,86 +203,86 @@ export function FigurePanelCard({
   ) => void;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{title}</p>
+    <div className="border-t border-rule pt-3">
+      <h4 className="mb-3 font-display text-sm font-semibold text-ink">{title}</h4>
       <div className="space-y-3">
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">X Axis Title</span>
+        <label className="field">
+          <span className="field-label">X Axis Title</span>
           <input
             value={settings.xlabel}
             onChange={(event) => onChange(panelKey, 'xlabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+            className="input"
           />
         </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Y Axis Title</span>
+        <label className="field">
+          <span className="field-label">Y Axis Title</span>
           <input
             value={settings.ylabel}
             onChange={(event) => onChange(panelKey, 'ylabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+            className="input"
           />
         </label>
         <div className="grid grid-cols-2 gap-2">
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">X Axis Range</span>
+          <label className="field">
+            <span className="field-label">X Axis Range</span>
             <input
               value={settings.xRangeInput}
               onChange={(event) => onChange(panelKey, 'xRangeInput', event.target.value)}
               placeholder="e.g. 0,160"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+              className="input input--num"
             />
           </label>
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">Y Axis Range</span>
+          <label className="field">
+            <span className="field-label">Y Axis Range</span>
             <input
               value={settings.yRangeInput}
               onChange={(event) => onChange(panelKey, 'yRangeInput', event.target.value)}
               placeholder="e.g. 0,1.1"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+              className="input input--num"
             />
           </label>
         </div>
         {panelKey === 'normalized' && (
           <div className="grid grid-cols-2 gap-2">
-            <label className="block text-xs font-medium text-slate-300">
-              <span className="mb-1.5 block">Circle Size</span>
+            <label className="field">
+              <span className="field-label">Circle Size</span>
               <input
                 type="number"
                 min={1}
                 step={1}
                 value={settings.markerSizeInput ?? '20'}
                 onChange={(event) => onChange(panelKey, 'markerSizeInput', event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+                className="input input--num"
               />
             </label>
-            <label className="flex cursor-pointer items-end gap-2 pb-2 text-xs font-medium text-slate-300">
+            <label className="flex cursor-pointer items-end gap-2 pb-2 text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={settings.enhanceFit ?? false}
                 onChange={(event) => onChange(panelKey, 'enhanceFit', event.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
+                className="checkbox"
               />
               <span>Enhance Fit Curves</span>
             </label>
           </div>
         )}
         <div className="pt-1">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
             <input
               type="checkbox"
               checked={settings.showLabels}
               onChange={(event) => onChange(panelKey, 'showLabels', event.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-black/30 text-blue-500 focus:ring-blue-500/50 focus:ring-offset-0 transition-all"
+              className="checkbox"
             />
             <span>Show Curve Labels</span>
           </label>
         </div>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Offset %</span>
+        <label className="field">
+          <span className="field-label">Offset %</span>
           <input
             value={settings.labelOffsetInput}
             onChange={(event) => onChange(panelKey, 'labelOffsetInput', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-blue-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-blue-500/50 hover:bg-black/30"
+            className="input input--num"
           />
         </label>
       </div>
@@ -333,64 +334,64 @@ export function SpectralFigureCard({
   ]);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md shadow-sm">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Spectral Figure</p>
+    <div className="border-t border-rule pt-3">
+      <h4 className="mb-3 font-display text-sm font-semibold text-ink">Spectral Figure</h4>
       <div className="space-y-3">
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Figure Title</span>
+        <label className="field">
+          <span className="field-label">Figure Title</span>
           <input
             value={settings.title}
             onChange={(event) => onChange('title', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+            className="input"
           />
         </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">X Axis Title</span>
+        <label className="field">
+          <span className="field-label">X Axis Title</span>
           <input
             value={settings.xlabel}
             onChange={(event) => onChange('xlabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+            className="input"
           />
         </label>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Y Axis Title</span>
+        <label className="field">
+          <span className="field-label">Y Axis Title</span>
           <input
             value={settings.ylabel}
             onChange={(event) => onChange('ylabel', event.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+            className="input"
           />
         </label>
         <div className="grid grid-cols-2 gap-2">
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">X Axis Range</span>
+          <label className="field">
+            <span className="field-label">X Axis Range</span>
             <input
               value={settings.xRangeInput}
               onChange={(event) => onChange('xRangeInput', event.target.value)}
               placeholder="optional"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+              className="input input--num"
             />
           </label>
-          <label className="block text-xs font-medium text-slate-300">
-            <span className="mb-1.5 block">Y Axis Range</span>
+          <label className="field">
+            <span className="field-label">Y Axis Range</span>
             <input
               value={settings.yRangeInput}
               onChange={(event) => onChange('yRangeInput', event.target.value)}
               placeholder="optional"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+              className="input input--num"
             />
           </label>
         </div>
-        <label className="block text-xs font-medium text-slate-300">
-          <span className="mb-1.5 block">Heatmap Color Range</span>
+        <label className="field">
+          <span className="field-label">Heatmap Color Range</span>
           <input
             value={settings.zRangeInput}
             onChange={(event) => onChange('zRangeInput', event.target.value)}
             placeholder="optional, e.g. -0.2,0.8"
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+            className="input input--num"
           />
         </label>
         <div className="grid grid-cols-2 gap-3 pt-1">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
             <input
               type="checkbox"
               checked={settings.overlapEnabled}
@@ -403,25 +404,25 @@ export function SpectralFigureCard({
                   fillDefaultOverlapScale();
                 }
               }}
-              className="h-4 w-4 rounded border-white/20 bg-black/30 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0 transition-all"
+              className="checkbox"
             />
             <span>Overlap</span>
           </label>
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-300">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
             <input
               type="checkbox"
               checked={settings.baselineCorrectionEnabled}
               onChange={(event) => onChange('baselineCorrectionEnabled', event.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-black/30 text-emerald-500 focus:ring-emerald-500/50 focus:ring-offset-0 transition-all"
+              className="checkbox"
             />
             <span>Baseline</span>
           </label>
         </div>
 
         {settings.overlapEnabled && (
-          <div className="space-y-3 rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3">
-            <label className="block text-xs font-medium text-slate-300">
-              <span className="mb-1.5 block">Count</span>
+          <div className="space-y-3 border-t-2 border-rule-2 pt-3">
+            <label className="field">
+              <span className="field-label">Count</span>
               <input
                 type="number"
                 min={1}
@@ -433,11 +434,11 @@ export function SpectralFigureCard({
                   onChange('overlapCount', nextCount);
                   resetOverlapTimes(nextCount);
                 }}
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+                className="input input--num"
               />
             </label>
-            <label className="block text-xs font-medium text-slate-300">
-              <span className="mb-1.5 block">Scale</span>
+            <label className="field">
+              <span className="field-label">Scale</span>
               <input
                 type="number"
                 step="any"
@@ -445,7 +446,7 @@ export function SpectralFigureCard({
                 value={settings.overlapScaleInput}
                 onChange={(event) => onChange('overlapScaleInput', event.target.value)}
                 placeholder="auto"
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200 transition-colors focus:border-emerald-500/50 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 hover:bg-black/30"
+                className="input input--num"
               />
             </label>
             <OverlapTimeAxis
@@ -477,9 +478,9 @@ function OverlapTimeAxis({
 
   if (!range) {
     return (
-      <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-xs text-slate-500">
+      <p className="status-line border border-rule bg-sheet px-3 py-3">
         Select a waterfall file first.
-      </div>
+      </p>
     );
   }
 
@@ -502,12 +503,12 @@ function OverlapTimeAxis({
 
   return (
     <div>
-      <div className="mb-1.5 flex items-center justify-between text-[10px] font-medium text-slate-500">
+      <div className="mb-1.5 flex items-center justify-between font-outlier text-xs tabular-nums text-muted">
         <span>{formatNumber(start, 4)}</span>
         <span>{formatNumber(end, 4)}</span>
       </div>
-      <div ref={axisRef} className="relative h-10 rounded-lg border border-white/10 bg-black/20">
-        <span className="absolute left-2 right-2 top-1/2 h-px -translate-y-1/2 bg-white/15" />
+      <div ref={axisRef} className="relative h-10 border border-rule bg-sheet">
+        <span aria-hidden="true" className="absolute left-2 right-2 top-1/2 h-px -translate-y-1/2 bg-rule-2" />
         {values.map((value, index) => {
           const left = `${((value - start) / Math.max(end - start, 1e-12)) * 100}%`;
           const active = activeIndex === index;
@@ -526,11 +527,12 @@ function OverlapTimeAxis({
                 if (event.buttons !== 1) return;
                 updateFromPointer(event, index);
               }}
-              className="absolute top-1/2 z-10 h-5 w-3 -translate-x-1/2 -translate-y-1/2 cursor-col-resize rounded-full border border-white/50 bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.25)] outline-none transition-transform hover:scale-110 focus:scale-110"
+              className="absolute top-1/2 z-10 h-5 w-3 -translate-x-1/2 -translate-y-1/2 cursor-col-resize border border-ink-2 bg-accent outline-none"
               style={{ left }}
             >
+              <span className="absolute -inset-2" aria-hidden="true" />
               {active && (
-                <span className="pointer-events-none absolute bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/10 bg-black/90 px-2 py-1 text-[10px] font-medium text-slate-200">
+                <span className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap border border-rule-2 bg-paper px-2 py-1 font-outlier text-xs tabular-nums text-ink">
                   {formatNumber(value, 4)}
                 </span>
               )}
